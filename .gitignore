@@ -1,0 +1,5 @@
+# macOS system files
+.DS_Store
+
+# Large generated descriptor file
+datasets/training_sets/descriptors.zip
