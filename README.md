@@ -10,9 +10,10 @@ Ionic liquids (ILs) are tunable organic salts with negligible vapor pressure, hi
 
 ## Repository Structure
 
-- `datasets/` – Curated training and external test sets
+- `datasets/` – Curated training sets and an external test set
 - `models/` – Trained models
 - `figures/` - Contains the README figure
+- `results/` - Contains interactive UMAPs
 
 ## Datasets and Models
 
