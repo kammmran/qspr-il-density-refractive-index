@@ -122,7 +122,7 @@ Default: `Mole_fraction`
 `--temp_col TEMP_COL`
 Name of the temperature column.
 Default: `Temperature`. 
-If not indicated, it will take 298.15 K as a deafult value.
+If not indicated, it will take 298.15 K as a default value.
 
 `--model_dir MODEL_DIR`
 Directory containing the trained ensemble model and metadata.
