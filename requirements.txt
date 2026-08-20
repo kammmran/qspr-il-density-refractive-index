@@ -5,3 +5,4 @@ rdkit>=2023.9
 joblib>=1.5
 xgboost
 sphinx>=7.0
+furo
