@@ -9,3 +9,4 @@ __pycache__/
 *.py[cod]
 predictions*.csv
 results/*_prediction.csv
+docs/_build/

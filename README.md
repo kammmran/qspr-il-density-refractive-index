@@ -83,6 +83,16 @@ python -m pip install -r requirements.txt
 
 After installation, predictions can be generated using the provided application scripts.
 
+### Build the Sphinx documentation
+
+Install the dependencies, then build the HTML documentation from the project root:
+
+```bash
+python -m sphinx -b html docs docs/_build/html
+```
+
+Open `docs/_build/html/index.html` in a browser to view the generated documentation.
+
 ### Input File Format
 
 Prepare a comma-separated CSV file containing the following information:
