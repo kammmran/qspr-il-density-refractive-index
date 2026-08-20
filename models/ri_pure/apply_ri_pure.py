@@ -1,3 +1,4 @@
+from prediction_settings import configure_prediction_args
 from mordred import Calculator, descriptors
 from mordred.error import Missing
 from rdkit import Chem
@@ -10,18 +11,23 @@ import joblib
 import json
 import warnings
 import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 default_temp = 298.15
 default_smiles_col = "SMILES"
 default_model_dir = "RI_pure_ensemble_model"
 default_output_csv = "predictions.csv"
 
+
 def standardize_molecule(smi):
     changes = []
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return smi, "Invalid SMILES"
-    
+
     try:
         parts = smi.split('.')
         reionized_parts = []
@@ -64,6 +70,7 @@ def standardize_molecule(smi):
     change_summary = ", ".join(changes) if changes else "No changes"
     return standardized_smi, change_summary
 
+
 def reorder_charged_species(df, smiles_col='Standardized_IL_SMILES'):
     def reorder_smiles(smi):
         parts = smi.split('.')
@@ -79,6 +86,7 @@ def reorder_charged_species(df, smiles_col='Standardized_IL_SMILES'):
     df[smiles_col] = df[smiles_col].apply(reorder_smiles)
     return df
 
+
 def load_models_and_metadata(model_dir):
     models = []
     model_metadata = []
@@ -86,7 +94,8 @@ def load_models_and_metadata(model_dir):
         model_path = os.path.join(model_dir, f"model_{i}.joblib")
         metadata_path = os.path.join(model_dir, f"metadata_{i}.json")
         if not os.path.exists(model_path) or not os.path.exists(metadata_path):
-            raise FileNotFoundError(f"Model or metadata file for model {i} not found in {model_dir}.")
+            raise FileNotFoundError(
+                f"Model or metadata file for model {i} not found in {model_dir}.")
         model = joblib.load(model_path)
         with open(metadata_path, "r") as f:
             metadata = json.load(f)
@@ -94,10 +103,12 @@ def load_models_and_metadata(model_dir):
         model_metadata.append(metadata)
     return models, model_metadata
 
+
 def calculate_descriptors(smiles, required_descriptors):
     smiles_list = smiles.split('.')
     calc = Calculator(descriptors, ignore_3D=True)
-    calc.descriptors = [d for d in calc.descriptors if str(d) in required_descriptors]
+    calc.descriptors = [d for d in calc.descriptors if str(
+        d) in required_descriptors]
     descriptor_vectors = []
     descriptor_names = None
     for smi in smiles_list:
@@ -118,22 +129,26 @@ def calculate_descriptors(smiles, required_descriptors):
     if descriptor_vectors:
         descriptor_vectors = np.array(descriptor_vectors, dtype=np.float64)
         with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', category=RuntimeWarning, message='Mean of empty slice')
+            warnings.filterwarnings(
+                'ignore', category=RuntimeWarning, message='Mean of empty slice')
             mean_descriptor_vector = np.nanmean(descriptor_vectors, axis=0)
         return mean_descriptor_vector, descriptor_names
     else:
         print(f"No valid molecules found for SMILES: {smiles}")
         return None, None
-    
+
+
 def process_il_smiles_list(smiles_list, required_descriptors):
     descriptor_vectors = []
     for smiles in smiles_list:
-        mean_descriptor_vector, descriptor_names = calculate_descriptors(smiles, required_descriptors)
+        mean_descriptor_vector, descriptor_names = calculate_descriptors(
+            smiles, required_descriptors)
         if mean_descriptor_vector is not None:
             descriptor_vectors.append(mean_descriptor_vector)
         else:
             descriptor_vectors.append([np.nan] * len(required_descriptors))
     return np.array(descriptor_vectors)
+
 
 def main(args):
     # Apply defaults if user did not specify
@@ -141,18 +156,21 @@ def main(args):
         print(f"Info: No input file specified.")
     if args.smiles_col is None or args.smiles_col.strip() == "":
         args.smiles_col = default_smiles_col
-        print(f"Info: No SMILES column specified. Using default: {default_smiles_col}")
+        print(
+            f"Info: No SMILES column specified. Using default: {default_smiles_col}")
     if args.model_dir is None or args.model_dir.strip() == "":
         args.model_dir = default_model_dir
-        print(f"Info: No model directory specified. Using default: {default_model_dir}")
+        print(
+            f"Info: No model directory specified. Using default: {default_model_dir}")
     if args.output_csv is None or args.output_csv.strip() == "":
         args.output_csv = default_output_csv
-        print(f"Info: No output file specified. Using default: {default_output_csv}")
+        print(
+            f"Info: No output file specified. Using default: {default_output_csv}")
 
     if not os.path.exists(args.input_csv):
         print(f"Error: Input file '{args.input_csv}' does not exist.")
         return
-    
+
     data = pd.read_csv(args.input_csv)
     if args.smiles_col not in data.columns:
         print(f"Error: Input file must contain '{args.smiles_col}' column.")
@@ -162,17 +180,19 @@ def main(args):
     for smi in data[args.smiles_col]:
         standardized_smi, change_summary = standardize_molecule(smi)
         standardized_smiles.append(standardized_smi)
-    
+
     data["Standardized_IL_SMILES"] = standardized_smiles
     print("Molecules standardized...")
     data = reorder_charged_species(data, smiles_col="Standardized_IL_SMILES")
 
     if args.temp_col is None or args.temp_col not in data.columns:
         data['Temperature'] = default_temp
-        print(f"Info: 'Temperature' column not provided. Using default: {default_temp} K.")
+        print(
+            f"Info: 'Temperature' column not provided. Using default: {default_temp} K.")
     elif data[args.temp_col].isna().any():
         data['Temperature'] = data[args.temp_col].fillna(default_temp)
-        print(f"Info: Missing values in 'Temperature' column. Defaulting missing values to {default_temp} K.")
+        print(
+            f"Info: Missing values in 'Temperature' column. Defaulting missing values to {default_temp} K.")
     else:
         data.rename(columns={args.temp_col: 'Temperature'}, inplace=True)
 
@@ -181,7 +201,7 @@ def main(args):
     except Exception as e:
         print(f"Error loading models or metadata: {str(e)}")
         return
-    
+
     all_smiles_list = data["Standardized_IL_SMILES"].tolist()
     predictions = []
 
@@ -189,12 +209,13 @@ def main(args):
         print(f"Calculating descriptors for Model {i}...")
         try:
             required_descriptors_model = metadata['descriptors']
-            descriptor_array = process_il_smiles_list(all_smiles_list, required_descriptors_model)
+            descriptor_array = process_il_smiles_list(
+                all_smiles_list, required_descriptors_model)
             temperature_array = data['Temperature'].values.reshape(-1, 1)
             descriptor_array = np.hstack((descriptor_array, temperature_array))
         except Exception as e:
             print(f"Error calculating descriptors for Model {i}: {str(e)}")
-        
+
         try:
             print(f"Applying Model {i}...")
             preds = model.predict(descriptor_array)
@@ -202,7 +223,7 @@ def main(args):
         except Exception as e:
             print(f"Error processing Model {i}: {str(e)}")
             predictions.append(pd.Series([np.nan] * len(all_smiles_list)))
-    
+
     data['prediction_mean'] = pd.concat(predictions, axis=1).mean(axis=1)
     data['prediction_std'] = pd.concat(predictions, axis=1).std(axis=1)
     data['prediction_mean'] = data['prediction_mean'].round(4)
@@ -210,12 +231,21 @@ def main(args):
     data.to_csv(args.output_csv, index=False)
     print(f'Predictions saved to {args.output_csv}')
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Apply the consensus model to predict refractive index of pure IL (not a mixture).")
-    parser.add_argument("--input_csv", required=True, help="[REQUIRED] Path to the input CSV file (expected comma delimiter).")
-    parser.add_argument("--smiles_col", help="Name of the SMILES column in the input CSV (default: SMILES).")
-    parser.add_argument("--temp_col", help="Name of the temperature column in the input CSV (default: Temperature).")
-    parser.add_argument("--model_dir", help="Directory containing the ensemble of models and metadata (default: RI_pure_ensemble_model).")
-    parser.add_argument("--output_csv", help="Path to save the output CSV with predictions (default: predictions.csv).")
+    parser = argparse.ArgumentParser(
+        description="Apply the consensus model to predict refractive index of pure IL (not a mixture).")
+    parser.add_argument(
+        "--input_csv", help="Path to the input CSV file (if omitted, you will be prompted).")
+    parser.add_argument(
+        "--smiles_col", help="Name of the SMILES column in the input CSV (default: SMILES).")
+    parser.add_argument(
+        "--temp_col", help="Name of the temperature column in the input CSV (default: Temperature).")
+    parser.add_argument(
+        "--model_dir", help="Directory containing the ensemble of models and metadata (default: RI_pure_ensemble_model).")
+    parser.add_argument(
+        "--output_csv", help="Path to save the output CSV with predictions (default: predictions.csv).")
     args = parser.parse_args()
+    args = configure_prediction_args(
+        args, default_model_dir, default_output_csv)
     main(args)

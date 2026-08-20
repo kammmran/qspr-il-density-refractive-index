@@ -54,6 +54,15 @@ cd qspr-il-density-refractive-index
 
 ### 2. Create and activate a virtual environment
 
+Using Python `venv`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
 Using `conda`:
 Create environment:
 ```bash
@@ -67,7 +76,7 @@ conda activate ilqspr
 Install dependencies:
 ```bash
 conda install xgboost=2.1.4
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ## Usage
@@ -89,7 +98,25 @@ Example:
 | C\[N+](C)(C)C.\[Cl-]     | 0.30             | 298.15      |
 
 Column names can be customized via command-line arguments. 
-The default expected names for the columns are `SMILES`, `Mole_fraction`, `Temperature`, respectively.
+The bundled external test set uses `IL_SMILES`, `Mole_fraction_IL`, and `Temperature` where available. The standalone application scripts use `SMILES`, `Mole_fraction`, and `Temperature` as generic defaults; specify column arguments when using the bundled test set.
+
+### Interactive settings
+
+For one launcher covering all available models, run:
+
+```bash
+python qspr.py
+```
+
+It asks you to choose density or refractive index and the solvent, then asks for the input and output settings. The default output is saved in `results/` with the selected model name, for example `results/ri_ethanol_prediction.csv`.
+
+You can also start any `apply_*.py` script without `--input_csv` to enter the settings interactively:
+
+```bash
+python models/ri_ethanol/apply_ri_ethanol.py
+```
+
+The script asks for the input CSV, SMILES column, mole fraction column, temperature column, model directory, and output CSV. Press **Enter** at any optional setting to keep its default. Leave the temperature column empty to use `298.15 K` for every row. The input CSV path is required.
 
 ---
 

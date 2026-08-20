@@ -3,3 +3,9 @@
 
 # Large generated descriptor file
 datasets/training_sets/descriptors.zip
+
+# Python bytecode and local prediction outputs
+__pycache__/
+*.py[cod]
+predictions*.csv
+results/*_prediction.csv
