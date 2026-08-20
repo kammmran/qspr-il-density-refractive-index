@@ -4,6 +4,11 @@
 
 This repository contains QSPR models for predicting the density (kg/m<sup>3</sup>) and refractive index (Na D-line) of binary mixtures of ionic liquids (ILs) with water, ethanol, and isopropanol under near-atmospheric pressure conditions (90–110 kPa), at user-specified IL mole fractions and temperatures.
 
+## Authors
+
+- [Shamkhal Baybekov](https://github.com/sbaybekov) – [LinkedIn](https://www.linkedin.com/in/shamkhal-baybekov/)
+- [Kamran Heydarov](https://github.com/kammmran) – [LinkedIn](https://www.linkedin.com/in/kamranheydarov/)
+
 ## Background
 
 Ionic liquids (ILs) are tunable organic salts with negligible vapor pressure, high thermal stability, and strong solvating ability, and their vast combinatorial chemical space enables the design of systems with diverse physicochemical properties. Accurate knowledge of key properties such as density and refractive index is essential for rational design of IL–solvent systems, yet experimental measurements are often laborious and costly. This project develops data-driven QSPR models to estimate density and refractive index across varying compositions and temperatures.
@@ -17,7 +22,7 @@ Ionic liquids (ILs) are tunable organic salts with negligible vapor pressure, hi
 
 ## Datasets and Models
 
-Training datasets were extracted from the [ILThermo database](https://ilthermo.boulder.nist.gov/) using a specifically developed tool, [pyIonics](https://github.com/kammmran/pyionics). The external test set was provided by the [Institute of Petrochemical Processes](https://nkpi.az/?lang=en) (Baku, Azerbaijan).
+Training datasets were extracted from the [ILThermo database](https://ilthermo.boulder.nist.gov/) using a specifically developed tool, [pyIonics](https://github.com/kammmran/pyionics).
 
 The curation procedure included duplicate removal, consistency checks, and standardization of molecular structures and composition variables.
 
