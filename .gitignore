@@ -12,3 +12,7 @@ results/*_prediction.csv
 docs/_build/
 docs/html/
 docs/doctrees/
+
+.venv/
+.pytest_cache/
+test/
