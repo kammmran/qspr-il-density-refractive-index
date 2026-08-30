@@ -4,5 +4,9 @@ mordredcommunity>=2.0.6
 rdkit>=2023.9
 joblib>=1.5
 xgboost
+requests>=2.31
+tqdm>=4.66
+streamlit>=1.38
+pytest>=8.0
 sphinx>=7.0
 furo

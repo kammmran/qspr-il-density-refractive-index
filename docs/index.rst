@@ -1,6 +1,9 @@
 QSPR Modeling of Density and Refractive Index
 ==============================================
 
+.. image:: ../figures/il_github.png
+   :alt: Predictors of Density and Refractive Index in IL-Solvent Mixtures
+
 This project provides ensemble QSPR models for predicting ionic-liquid density
 and refractive index in water, ethanol, isopropanol, and pure ionic liquids.
 
@@ -50,20 +53,26 @@ Pure ionic-liquid models do not require a mole-fraction column.
 Repository structure
 --------------------
 
+* ``qspr_il/`` is the installable package: the prediction engine and model
+  registry (:doc:`engine`), the data fetch/cleaning pipeline (:doc:`data_pipeline`),
+  the CLI, and the Streamlit app (:doc:`streamlit_app`).
 * ``datasets/`` contains curated training sets and the external test set.
-* ``models/`` contains application scripts, metadata, and trained ensembles.
+* ``huggingface_space/`` is a standalone export for deploying the Streamlit
+  app to Hugging Face Spaces.
 * ``figures/`` contains project figures.
 * ``results/`` contains generated prediction files and analysis artifacts.
+* ``tests/`` contains the pytest suite.
 
 Datasets and Models
 -------------------
 
-Training datasets were extracted from the `ILThermo database
-<https://ilthermo.boulder.nist.gov/>`_ using the specifically developed
-`pyIonics tool <https://github.com/kammmran/pyionics>`_.
-
-The curation procedure included duplicate removal, consistency checks, and
-standardization of molecular structures and composition variables.
+Training datasets are sourced from the `ILThermo database
+<https://ilthermo.boulder.nist.gov/>`_. Data acquisition and curation used to
+depend on an external tool, `pyIonics <https://github.com/kammmran/pyionics>`_;
+that tool is now vendored permanently inside :mod:`qspr_il.data.ionics`, and
+the "duplicate removal, consistency checks, and standardization" step is
+implemented in :mod:`qspr_il.data.cleaning`. See :doc:`data_pipeline` for
+details.
 
 Molecular structures were represented using 2D descriptors calculated with the
 `Mordred descriptor package <https://github.com/mordred-descriptor/mordred>`_.
@@ -150,13 +159,15 @@ Press Enter to keep a displayed default. Predictions are saved under
 ``results/`` with a model-specific name such as
 ``results/ri_ethanol_prediction.csv``.
 
-For a direct model script, use command-line options::
+Non-interactively, pass ``--model`` and the other options directly::
 
-    python models/ri_ethanol/apply_ri_ethanol.py --input_csv datasets/external_test_set.csv --smiles_col IL_SMILES --mole_fraction_col Mole_fraction_IL --output_csv results/ri_ethanol_prediction.csv
+    python qspr.py --model 1 --input_csv datasets/external_test_set.csv --smiles_col IL_SMILES --mole_fraction_col Mole_fraction_IL --output_csv results/ri_ethanol_prediction.csv
 
 Temperature is optional and defaults to 298.15 K when the column is absent or
 contains missing values. Pure ionic-liquid models do not require a mole-fraction
 column.
+
+A Streamlit GUI is also available -- see :doc:`streamlit_app`.
 
 Further reading
 ---------------
@@ -164,19 +175,21 @@ Further reading
 See the project README for model performance, dataset details, command-line
 examples, and the complete repository structure.
 
-Model source files
-------------------
+Documentation contents
+-----------------------
 
-* :doc:`functions` - detailed function explanations and source excerpts
+* :doc:`engine` - the prediction engine, model registry, and CLI
+* :doc:`data_pipeline` - fetching and cleaning ILThermo data
 * :doc:`data` - dataset sizes, ranges, and missing-value statistics
-* :doc:`help_files` - command-line help and example commands
-* :doc:`models` - model application source files
+* :doc:`help_files` - command-line options reference
+* :doc:`streamlit_app` - the GUI and Hugging Face Spaces deployment
 
 .. toctree::
   :hidden:
   :maxdepth: 1
 
-  functions
+  engine
+  data_pipeline
   data
   help_files
-  models
+  streamlit_app

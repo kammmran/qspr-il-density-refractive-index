@@ -1,8 +1,20 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(".."))
+
 project = "QSPR Modeling of Density and Refractive Index"
 author = "Shamkhal Baybekov, Kamran Heydarov"
 copyright = ""
 
-extensions = []
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
+]
+autodoc_member_order = "bysource"
+autodoc_mock_imports = ["mordred", "rdkit", "xgboost", "streamlit"]
+
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 

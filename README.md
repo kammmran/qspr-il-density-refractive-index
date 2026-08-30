@@ -15,16 +15,17 @@ Ionic liquids (ILs) are tunable organic salts with negligible vapor pressure, hi
 
 ## Repository Structure
 
+- `qspr_il/` – The installable package: the prediction engine and model registry (`qspr_il/models/`, `qspr_il/registry.py`), the ILThermo data fetch/cleaning pipeline (`qspr_il/data/`), the CLI (`qspr_il/cli.py`), and the Streamlit app (`qspr_il/app.py`)
 - `datasets/` – Curated training sets and an external test set
-- `models/` – Trained models
+- `huggingface_space/` – Standalone export for deploying the Streamlit app to Hugging Face Spaces
 - `figures/` - Contains the README figure
-- `results/` - Contains interactive UMAPs
+- `results/` - Contains generated prediction files
+- `tests/` - Pytest suite
+- `docs/` - Sphinx documentation (built via autodoc against `qspr_il`)
 
 ## Datasets and Models
 
-Training datasets were extracted from the [ILThermo database](https://ilthermo.boulder.nist.gov/) using a specifically developed tool, [pyIonics](https://github.com/kammmran/pyionics).
-
-The curation procedure included duplicate removal, consistency checks, and standardization of molecular structures and composition variables.
+Training datasets are sourced from the [ILThermo database](https://ilthermo.boulder.nist.gov/). Data acquisition used to depend on an external tool, [pyIonics](https://github.com/kammmran/pyionics); that tool is now vendored permanently inside `qspr_il.data.ionics` (pyIonics itself is being deprecated as a standalone package). The "duplicate removal, consistency checks, and standardization" step is implemented in `qspr_il.data.cleaning` — see the [data pipeline docs](docs/data_pipeline.rst) for details, including known limitations of the underlying data source, and for how to regenerate a curated dataset yourself.
 
 Molecular structures were represented using 2D descriptors calculated with the [Mordred descriptor package](https://github.com/mordred-descriptor/mordred). For each IL, descriptors were computed separately for the cation and anion and then averaged to obtain a unified IL representation. Low-variance and near-constant descriptors were removed, highly correlated features were grouped, and thermodynamic variables (temperature and IL mole fraction) were appended to form the final feature set.
 
@@ -66,6 +67,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 Using `conda`:
@@ -82,7 +84,13 @@ Install dependencies:
 ```bash
 conda install xgboost=2.1.4
 python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
+
+`pip install -e .` installs the `qspr_il` package itself (editable), which is
+what makes `import qspr_il` and the `qspr-il-predict` command work. Add the
+`gui` extra (`pip install -e ".[gui]"`) if you only installed a subset of
+`requirements.txt` and want the Streamlit app.
 
 ## Usage
 
@@ -112,8 +120,8 @@ Example:
 |------------------------|------------------|-------------|
 | C\[N+](C)(C)C.\[Cl-]     | 0.30             | 298.15      |
 
-Column names can be customized via command-line arguments. 
-The bundled external test set uses `IL_SMILES`, `Mole_fraction_IL`, and `Temperature` where available. The standalone application scripts use `SMILES`, `Mole_fraction`, and `Temperature` as generic defaults; specify column arguments when using the bundled test set.
+Column names can be customized via command-line arguments (or, in the Streamlit app, the column-name fields).
+The bundled external test set uses `IL_SMILES` and `Mole_fraction_IL`. The default mole-fraction column name (`Mole_fraction_IL`) already matches it; the default SMILES column name is generic (`SMILES`), so pass `--smiles_col IL_SMILES` (CLI) or set the SMILES column field to `IL_SMILES` (app) when using the bundled test set as-is.
 
 ### Interactive settings
 
@@ -125,13 +133,7 @@ python qspr.py
 
 It asks you to choose density or refractive index and the solvent, then asks for the input and output settings. The default output is saved in `results/` with the selected model name, for example `results/ri_ethanol_prediction.csv`.
 
-You can also start any `apply_*.py` script without `--input_csv` to enter the settings interactively:
-
-```bash
-python models/ri_ethanol/apply_ri_ethanol.py
-```
-
-The script asks for the input CSV, SMILES column, mole fraction column, temperature column, model directory, and output CSV. Press **Enter** at any optional setting to keep its default. Leave the temperature column empty to use `298.15 K` for every row. The input CSV path is required.
+You can also run `python qspr.py` without any flags to enter every setting interactively, including which of the 8 models to run. Press **Enter** at any optional setting to keep its default. Leave the temperature column empty to use `298.15 K` for every row.
 
 ---
 
@@ -140,12 +142,13 @@ The script asks for the input CSV, SMILES column, mole fraction column, temperat
 Run the following command:
 
 ```bash
-python models/ri_ethanol/apply_ri_ethanol.py --input_csv datasets/external_test_set.csv --smiles_col IL_SMILES --mole_fraction_col Mole_fraction_IL --model_dir models/ri_ethanol/RI_ethanol_ensemble_model --output_csv predictions_ri_ethanol.csv
+python qspr.py --model 1 --input_csv datasets/external_test_set.csv --smiles_col IL_SMILES --mole_fraction_col Mole_fraction_IL --output_csv results/ri_ethanol_prediction.csv
 ```
 
 ⸻
 
-Required Argument
+`--model {1..8}`
+Which of the 8 trained models to run (see the table above; interactively prompted if omitted).
 
 `--input_csv INPUT_CSV`
 Path to the input CSV file (comma-delimited).
@@ -159,8 +162,8 @@ Name of the SMILES column in the input CSV.
 Default: `SMILES`
 
 `--mole_fraction_col MOLE_FRACTION_COL`
-Name of the mole fraction column.
-Default: `Mole_fraction`
+Name of the mole fraction column (mixture models only; not used for pure-IL models).
+Default: `Mole_fraction_IL` (matches the bundled `datasets/external_test_set.csv`)
 
 `--temp_col TEMP_COL`
 Name of the temperature column.
@@ -168,22 +171,39 @@ Default: `Temperature`.
 If not indicated, it will take 298.15 K as a default value.
 
 `--model_dir MODEL_DIR`
-Directory containing the trained ensemble model and metadata.
-Default: `RI_ethanol_ensemble_model`
+Directory containing the trained ensemble model and metadata. Defaults to the selected model's bundled directory under `qspr_il/models/`.
 
 `--output_csv OUTPUT_CSV`
 Path to save the output CSV with predictions.
-Default: `predictions.csv`
+Default: `results/<model_name>_prediction.csv`
 
 ### Help Messages
 
-All scripts support a help message detailing the available command-line arguments. To view it, run:
+The CLI supports a help message detailing the available command-line arguments:
 
 ```bash
-python apply_ri_ethanol.py --help
+python qspr.py --help
 ```
 
-The help message of each model is also available in `code_help_message.txt` in the same directory where the model is.
+### Streamlit GUI
+
+A Streamlit app provides a graphical alternative to the CLI:
+
+```bash
+python -m pip install -e ".[gui]"
+streamlit run qspr_il/app.py
+```
+
+It supports the same 8 models, either via CSV upload or a single-SMILES entry form. See `docs/streamlit_app.rst` for how this is packaged for deployment to Hugging Face Spaces.
+
+### Tests
+
+```bash
+python -m pip install -e ".[dev]"
+pytest
+```
+
+The test suite runs fully offline (no network calls, no multi-megabyte model files loaded) and typically finishes in a few seconds.
 
 ## Citation
 

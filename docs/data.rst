@@ -108,3 +108,12 @@ The training row count is the number of measurements, not the number of unique
 ionic liquids. Repeated IL SMILES can occur at different temperatures or
 compositions. Missing-cell counts include all columns, including metadata
 fields that are not required by the prediction scripts.
+
+Provenance
+----------
+
+These CSVs were curated from the ILThermo database. A reproducible,
+configurable version of that fetch-and-clean process is now implemented in
+:mod:`qspr_il.data.ionics` and :mod:`qspr_il.data.cleaning` -- see
+:doc:`data_pipeline` for how to (re)generate a dataset shaped like the ones
+summarized above, and for known limitations of the underlying data source.

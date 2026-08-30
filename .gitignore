@@ -10,3 +10,5 @@ __pycache__/
 predictions*.csv
 results/*_prediction.csv
 docs/_build/
+docs/html/
+docs/doctrees/
