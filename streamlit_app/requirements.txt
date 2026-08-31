@@ -1,0 +1,16 @@
+# Streamlit Community Cloud dependencies for streamlit_app/app.py.
+# The qspr_il package itself is imported from the repo checkout (see app.py),
+# not installed, so its bundled trained models are used directly. These are the
+# runtime third-party deps (base package + the "gui" extra from pyproject.toml).
+numpy>=1.26
+pandas>=2.2
+mordredcommunity>=2.0.6
+rdkit>=2023.9
+joblib>=1.5
+xgboost
+scikit-learn>=1.3
+requests>=2.31
+tqdm>=4.66
+streamlit>=1.38
+matplotlib>=3.8
+reportlab>=4.0

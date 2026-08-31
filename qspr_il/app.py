@@ -4,7 +4,7 @@ Run locally with::
 
     streamlit run qspr_il/app.py
 
-For Hugging Face Spaces deployment, see ``huggingface_space/`` at the repo
+For Streamlit Community Cloud deployment, see ``streamlit_app/`` at the repo
 root and :doc:`/streamlit_app` in the Sphinx docs.
 """
 
