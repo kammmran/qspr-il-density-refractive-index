@@ -4,6 +4,8 @@
 
 This repository contains QSPR models for predicting the density (kg/m<sup>3</sup>) and refractive index (Na D-line) of binary mixtures of ionic liquids (ILs) with water, ethanol, and isopropanol under near-atmospheric pressure conditions (90–110 kPa), at user-specified IL mole fractions and temperatures.
 
+**Live app:** https://qspr-il-density-refractive-index.streamlit.app/
+
 ## Authors
 
 - [Shamkhal Baybekov](https://github.com/sbaybekov) – [LinkedIn](https://www.linkedin.com/in/shamkhal-baybekov/)
@@ -195,7 +197,10 @@ python qspr.py --help
 
 ### Streamlit GUI
 
-A Streamlit app provides a graphical alternative to the CLI:
+A Streamlit app provides a graphical alternative to the CLI. A hosted instance
+is available at
+[qspr-il-density-refractive-index.streamlit.app](https://qspr-il-density-refractive-index.streamlit.app/),
+or run it locally:
 
 ```bash
 python -m pip install -e ".[gui]"

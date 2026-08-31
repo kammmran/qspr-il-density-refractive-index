@@ -7,6 +7,9 @@ QSPR Modeling of Ionic Liquid properties
 This project provides ensemble QSPR models for predicting ionic-liquid density
 and refractive index in water, ethanol, isopropanol, and pure ionic liquids.
 
+A hosted Streamlit app is available at
+https://qspr-il-density-refractive-index.streamlit.app/ (see :doc:`streamlit_app`).
+
 Project background
 ------------------
 
