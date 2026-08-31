@@ -14,7 +14,7 @@ docs/_build/
 docs/html/
 docs/doctrees/
 
-# Default raw-download cache for qspr_il.data.ionics / qspr_il.data.cleaning
+# Default raw-download cache for ilqspr.data.ionics / ilqspr.data.cleaning
 /data/
 
 .venv/

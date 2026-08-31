@@ -11,7 +11,7 @@ lives here permanently, with two fixes over the original:
    The default (``data_root=None`` -> ``Path.cwd()/"data"``) preserves prior behavior.
 
 This module only fetches and reshapes raw ILThermo data — it performs no
-deduplication, consistency checking, or filtering. See :mod:`qspr_il.data.cleaning`
+deduplication, consistency checking, or filtering. See :mod:`ilqspr.data.cleaning`
 for that.
 """
 
@@ -67,11 +67,13 @@ def getIdsets(
     """Search ILThermo for matching dataset ids and save the raw JSON response."""
     prop = prop or ""
     if not prop and not any([cmp, ncmp != "0", year, auth, keyw]):
-        raise ValueError("At least one parameter must be provided (prop or another search parameter).")
+        raise ValueError(
+            "At least one parameter must be provided (prop or another search parameter).")
 
     prop_id = None
     if prop:
-        prop_id = _lookup_property_id(prop, data_path or DEFAULT_PROPERTY_IDSETS)
+        prop_id = _lookup_property_id(
+            prop, data_path or DEFAULT_PROPERTY_IDSETS)
 
     url = (
         "https://ilthermo.boulder.nist.gov/ILT2/ilsearch?"
@@ -128,7 +130,8 @@ def getData(
     )
 
     prop_label = prop if prop else "all"
-    ncmp_label = _NCMP_LABELS.get(str(ncmp), "all") if ncmp and ncmp != "0" else "all"
+    ncmp_label = _NCMP_LABELS.get(
+        str(ncmp), "all") if ncmp and ncmp != "0" else "all"
 
     extra_labels = []
     if cmp:
@@ -141,7 +144,8 @@ def getData(
         extra_labels.append(f"keyw_{keyw}")
     extra_suffix = "_" + "_".join(extra_labels) if extra_labels else ""
 
-    idset_dir = get_data_dir(data_root) / f"{prop_label}_{ncmp_label}_data{extra_suffix}"
+    idset_dir = get_data_dir(data_root) / \
+        f"{prop_label}_{ncmp_label}_data{extra_suffix}"
 
     with open(save_path, "r", encoding="utf-8") as f:
         idsets_json = json.load(f)
@@ -155,13 +159,13 @@ def getData(
 def download_idsets(setids: list[str], output_dir: str | Path, progress_callback=None) -> Path:
     """Download each ILThermo dataset id in ``setids`` and save it as one JSON file per set.
 
-    Extracted out of :func:`getData` so callers (e.g. :mod:`qspr_il.data.cleaning`) can
+    Extracted out of :func:`getData` so callers (e.g. :mod:`ilqspr.data.cleaning`) can
     filter a broad search's results (by exact property name, since the ``prp`` id lookup
     used by :func:`getIdsets` can go stale against the live ILThermo API) before downloading,
     rather than always fetching every idset a search returns.
 
     ``progress_callback``, if given, is called as ``progress_callback(index, total, setid)``
-    before each download (``index`` is 1-based) -- used by :mod:`qspr_il.data.cleaning` and
+    before each download (``index`` is 1-based) -- used by :mod:`ilqspr.data.cleaning` and
     the Streamlit app to show live download progress.
     """
     output_dir = Path(output_dir)
@@ -230,7 +234,8 @@ def flatten_idset(jdata: dict, idset: str) -> tuple[list[str], list[list[str]]]:
 
     components = jdata.get("components", [])
     for i in range(len(components)):
-        header += [f"component {i + 1} idout", f"component {i + 1} name", f"component {i + 1} formula"]
+        header += [f"component {i + 1} idout",
+                   f"component {i + 1} name", f"component {i + 1} formula"]
 
     def _strip(s: str) -> str:
         return str(s).replace("<SUB>", "").replace("</SUB>", "")
@@ -239,10 +244,12 @@ def flatten_idset(jdata: dict, idset: str) -> tuple[list[str], list[list[str]]]:
     for row in data_rows:
         flat_row = [idset, author]
         for cell in row:
-            cell_str = ";".join(str(x) for x in cell) if isinstance(cell, list) else str(cell)
+            cell_str = ";".join(str(x) for x in cell) if isinstance(
+                cell, list) else str(cell)
             flat_row.append(_strip(cell_str))
         for comp in components:
-            flat_row.extend([_strip(comp.get("idout", "")), _strip(comp.get("name", "")), _strip(comp.get("formula", ""))])
+            flat_row.extend([_strip(comp.get("idout", "")), _strip(
+                comp.get("name", "")), _strip(comp.get("formula", ""))])
         rows.append(flat_row)
 
     return header, rows
@@ -251,7 +258,8 @@ def flatten_idset(jdata: dict, idset: str) -> tuple[list[str], list[list[str]]]:
 def convert2csv(folder_name="", file_name="", data_root=None) -> None:
     """Convert downloaded per-set JSON files in ``data_root/folder_name`` into CSVs."""
     data_root_path = get_data_dir(data_root)
-    folder = Path(folder_name) if folder_name and Path(folder_name).is_absolute() else data_root_path / folder_name
+    folder = Path(folder_name) if folder_name and Path(
+        folder_name).is_absolute() else data_root_path / folder_name
     if not folder_name:
         folder = data_root_path
     if not folder.exists():
@@ -289,7 +297,8 @@ def convert2csv(folder_name="", file_name="", data_root=None) -> None:
 def convert2tsv(folder_name="", file_name="", data_root=None) -> None:
     """Convert downloaded per-set JSON files in ``data_root/folder_name`` into TSVs."""
     data_root_path = get_data_dir(data_root)
-    folder = Path(folder_name) if folder_name and Path(folder_name).is_absolute() else data_root_path / folder_name
+    folder = Path(folder_name) if folder_name and Path(
+        folder_name).is_absolute() else data_root_path / folder_name
     if not folder_name:
         folder = data_root_path
     if not folder.exists():
@@ -328,7 +337,8 @@ def mergeFiles(folder_name: str, data_root=None) -> Path:
     data_root_path = get_data_dir(data_root)
     folder_path = data_root_path / folder_name
     if not folder_path.exists():
-        print(f"Folder '{folder_name}' does not exist in the data directory (expected at: {folder_path}).")
+        print(
+            f"Folder '{folder_name}' does not exist in the data directory (expected at: {folder_path}).")
         return None
 
     merged_data = pd.DataFrame()
@@ -337,7 +347,8 @@ def mergeFiles(folder_name: str, data_root=None) -> Path:
         if not file_path.is_file():
             continue
         try:
-            merged_data = pd.concat([merged_data, pd.read_csv(file_path)], ignore_index=True)
+            merged_data = pd.concat(
+                [merged_data, pd.read_csv(file_path)], ignore_index=True)
         except Exception as e:
             print(f"Error reading {file}: {e}")
 
@@ -351,8 +362,10 @@ def addSmiles(folder_name="", file_name="", data_root=None, smiles_path=DEFAULT_
     data_root_path = get_data_dir(data_root)
 
     if folder_name and not file_name:
-        folder = folder_name if Path(folder_name).is_absolute() else data_root_path / folder_name
-        input_paths = [folder / f for f in os.listdir(folder) if f.endswith(".csv")]
+        folder = folder_name if Path(
+            folder_name).is_absolute() else data_root_path / folder_name
+        input_paths = [
+            folder / f for f in os.listdir(folder) if f.endswith(".csv")]
         base_folder = Path(folder).name
     elif file_name and not folder_name:
         if not file_name.endswith(".csv"):
@@ -364,7 +377,8 @@ def addSmiles(folder_name="", file_name="", data_root=None, smiles_path=DEFAULT_
         input_paths = [file_path]
         base_folder = ""
     elif folder_name and file_name:
-        folder = folder_name if Path(folder_name).is_absolute() else data_root_path / folder_name
+        folder = folder_name if Path(
+            folder_name).is_absolute() else data_root_path / folder_name
         file_path = Path(folder) / file_name
         if not file_path.exists():
             print(f"File {file_path} not found.")
@@ -375,7 +389,8 @@ def addSmiles(folder_name="", file_name="", data_root=None, smiles_path=DEFAULT_
         print("Please provide either folder_name or file_name.")
         return
 
-    output_folder = data_root_path / (f"smiles_{base_folder}" if base_folder else "smiles")
+    output_folder = data_root_path / \
+        (f"smiles_{base_folder}" if base_folder else "smiles")
     output_folder.mkdir(parents=True, exist_ok=True)
 
     smiles_path = Path(smiles_path)
@@ -386,8 +401,10 @@ def addSmiles(folder_name="", file_name="", data_root=None, smiles_path=DEFAULT_
     smiles_dict = {}
     with open(smiles_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        id_header = next((h for h in reader.fieldnames if "compound id" in h), None)
-        smiles_header = next((h for h in reader.fieldnames if "smiles" in h.lower()), None)
+        id_header = next(
+            (h for h in reader.fieldnames if "compound id" in h), None)
+        smiles_header = next(
+            (h for h in reader.fieldnames if "smiles" in h.lower()), None)
         if not id_header or not smiles_header:
             return
         for row in reader:
@@ -399,7 +416,8 @@ def addSmiles(folder_name="", file_name="", data_root=None, smiles_path=DEFAULT_
         if not rows:
             continue
         header = rows[0]
-        comp_idout_idxs = [i for i, col in enumerate(header) if col.startswith("component ") and col.endswith(" idout")]
+        comp_idout_idxs = [i for i, col in enumerate(
+            header) if col.startswith("component ") and col.endswith(" idout")]
         comp_formula_idxs = [
             i for i, col in enumerate(header) if col.startswith("component ") and col.endswith(" formula")
         ]
@@ -411,7 +429,8 @@ def addSmiles(folder_name="", file_name="", data_root=None, smiles_path=DEFAULT_
             new_row = row[:]
             for idx_idout, idx_formula in zip(comp_idout_idxs, comp_formula_idxs):
                 comp_id = row[idx_idout].strip()
-                new_row[idx_formula] = smiles_dict.get(comp_id, row[idx_formula])
+                new_row[idx_formula] = smiles_dict.get(
+                    comp_id, row[idx_formula])
             new_rows.append(new_row)
 
         output_file = output_folder / Path(file_path).name

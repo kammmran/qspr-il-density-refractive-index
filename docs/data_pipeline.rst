@@ -5,14 +5,14 @@ Training datasets are sourced from the `ILThermo database
 <https://ilthermo.boulder.nist.gov/>`_. This project used to depend on an
 external tool, `pyIonics <https://github.com/kammmran/pyionics>`_, for that
 step; pyIonics is being deprecated as a standalone package, so its
-functionality is now vendored permanently inside :mod:`qspr_il.data.ionics`.
-A second module, :mod:`qspr_il.data.cleaning`, adds the "duplicate removal,
+functionality is now vendored permanently inside :mod:`ilqspr.data.ionics`.
+A second module, :mod:`ilqspr.data.cleaning`, adds the "duplicate removal,
 consistency checks, and standardization" step the project has always
 described but never actually implemented in code until now.
 
 This pipeline is **not** limited to density and refractive index -- the two
 properties this project has trained models for. Call
-:func:`qspr_il.data.cleaning.list_available_properties` for the full list of
+:func:`ilqspr.data.cleaning.list_available_properties` for the full list of
 ~55 ILThermo properties (viscosity, surface tension, thermal conductivity,
 and more) that can be fetched and cleaned the same way, over any
 temperature/pressure range you choose. The curated output uses a generic
@@ -28,13 +28,13 @@ see :doc:`engine` and :doc:`streamlit_app`.
            ILT["ilthermo.boulder.nist.gov"]
        end
 
-       subgraph "qspr_il.data.ionics"
+       subgraph "ilqspr.data.ionics"
            SEARCH["getIdsets() / download_idsets()"]
            CONV["convert2csv()"]
            SMI["addSmiles() - keydata lookup"]
        end
 
-       subgraph "qspr_il.data.cleaning"
+       subgraph "ilqspr.data.cleaning"
            RESOLVE["resolve_property_display_name()"]
            PUBCHEM["resolve_smiles_by_name() - PubChem fallback"]
            FORMULA["formula_matches() - reject wrong matches"]
@@ -46,25 +46,25 @@ see :doc:`engine` and :doc:`streamlit_app`.
        SMI -. "unresolved SMILES" .-> PUBCHEM --> FORMULA --> CLEAN
        CLEAN --> OUT["Curated DataFrame - Property / Property_value schema"]
 
-Fetch layer: ``qspr_il.data.ionics``
+Fetch layer: ``ilqspr.data.ionics``
 -------------------------------------
 
 Pure fetch/reshape -- no cleaning logic. Downloads raw measurement data from
 ILThermo, flattens it into CSV/TSV, and joins in SMILES strings for known
 compound ids.
 
-.. automodule:: qspr_il.data.ionics.client
+.. automodule:: ilqspr.data.ionics.client
    :members:
    :undoc-members:
    :show-inheritance:
 
-Cleaning layer: ``qspr_il.data.cleaning``
+Cleaning layer: ``ilqspr.data.cleaning``
 -------------------------------------------
 
 Deduplication, temperature/pressure filtering, SMILES standardization, and
 column normalization into the same shape as ``datasets/training_sets/*.csv``.
 
-.. automodule:: qspr_il.data.cleaning
+.. automodule:: ilqspr.data.cleaning
    :members:
    :undoc-members:
    :show-inheritance:
@@ -74,7 +74,7 @@ Usage
 
 To (re)build a curated CSV for any property/solvent combination::
 
-   from qspr_il.data.cleaning import fetch_curated_dataset, list_available_properties
+   from ilqspr.data.cleaning import fetch_curated_dataset, list_available_properties
 
    list_available_properties()   # -> ['activity', 'density', 'refractive-index', 'viscosity', ...]
 
@@ -85,7 +85,7 @@ To (re)build a curated CSV for any property/solvent combination::
                                                           # curated dataset is still produced
 
 ``property_query`` can be the hyphenated short name from
-:func:`~qspr_il.data.cleaning.list_available_properties` (e.g.
+:func:`~ilqspr.data.cleaning.list_available_properties` (e.g.
 ``"refractive-index"``) or ILThermo's own display name (e.g.
 ``"Refractive index"``) -- it's resolved fuzzily against the live search
 results. ``solvent_name`` is one of ``"water"``, ``"ethanol"``,
@@ -96,9 +96,9 @@ limitations below), or ``None`` for a pure ionic liquid. Pass
 
 This module only fetches and cleans data; it does not train any model itself,
 and never touches the existing trained ``.joblib`` ensembles under
-``qspr_il/models/<name>/``. If the property you fetched has no trained model
+``ilqspr/models/<name>/``. If the property you fetched has no trained model
 yet (anything other than density or refractive index, today), a separate
-module -- :mod:`qspr_il.models.training`, see :doc:`training` -- can train a
+module -- :mod:`ilqspr.models.training`, see :doc:`training` -- can train a
 new one directly on the curated output. Both the CLI's "Both" action and the
 Streamlit app's "Both" mode offer this automatically when they hit a property
 with no matching model.
@@ -111,16 +111,16 @@ building this pipeline:
 
 * The bundled ``property_idsets.csv`` lookup table's internal ILThermo
   property ids no longer match what the live search API expects.
-  :func:`qspr_il.data.cleaning.fetch_curated_dataset` works around this by
+  :func:`ilqspr.data.cleaning.fetch_curated_dataset` works around this by
   searching broadly and filtering client-side on the exact property display
   name instead.
 * The bundled ``smiles.csv`` compound-id lookup table has sparse-to-nonexistent
   coverage of actual ionic-liquid compounds (it appears to mostly cover common
   small molecules/solvents). Solvent SMILES are therefore resolved by name
-  (:data:`qspr_il.data.cleaning.SOLVENT_SMILES_BY_NAME`) rather than by id,
-  and IL SMILES fall back to :func:`~qspr_il.data.cleaning.resolve_smiles_by_name`
+  (:data:`ilqspr.data.cleaning.SOLVENT_SMILES_BY_NAME`) rather than by id,
+  and IL SMILES fall back to :func:`~ilqspr.data.cleaning.resolve_smiles_by_name`
   (a PubChem name lookup, cross-checked against ILThermo's own reported
-  molecular formula via :func:`~qspr_il.data.cleaning.formula_matches` before
+  molecular formula via :func:`~ilqspr.data.cleaning.formula_matches` before
   being trusted -- a single, unambiguous-looking PubChem name match can still
   be the *wrong* compound, confirmed against a real IL salt name). Only a
   compound that fails both the id-based lookup and the formula-checked

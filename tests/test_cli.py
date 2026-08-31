@@ -1,7 +1,7 @@
 import pandas as pd
 
-from qspr_il import cli
-from qspr_il.registry import get as get_spec
+from ilqspr import cli
+from ilqspr.registry import get as get_spec
 
 
 def _write_input_csv(tmp_path, rows):
@@ -13,7 +13,8 @@ def _write_input_csv(tmp_path, rows):
 def test_main_end_to_end_mixture_model(tmp_path, monkeypatch, fake_ensemble_dir):
     # No --mole_fraction_col passed: relies on spec.default_mole_fraction_col
     # ("Mole_fraction_IL", matching the bundled datasets/external_test_set.csv convention).
-    input_csv = _write_input_csv(tmp_path, {"SMILES": ["CCO.[Cl-]"], "Mole_fraction_IL": [0.4]})
+    input_csv = _write_input_csv(
+        tmp_path, {"SMILES": ["CCO.[Cl-]"], "Mole_fraction_IL": [0.4]})
     output_csv = tmp_path / "out.csv"
 
     argv = [
@@ -82,7 +83,8 @@ def test_missing_model_triggers_interactive_prompt(monkeypatch, tmp_path, fake_e
 def test_main_reports_clear_error_for_mismatched_mole_fraction_column(tmp_path, fake_ensemble_dir, capsys):
     # Regression test: a wrong --mole_fraction_col used to silently produce an all-NaN
     # output CSV with no error message. It should now fail fast with a clear message.
-    input_csv = _write_input_csv(tmp_path, {"SMILES": ["CCO.[Cl-]"], "Mole_fraction_IL": [0.4]})
+    input_csv = _write_input_csv(
+        tmp_path, {"SMILES": ["CCO.[Cl-]"], "Mole_fraction_IL": [0.4]})
     output_csv = tmp_path / "out.csv"
 
     argv = [
@@ -105,7 +107,8 @@ def test_main_reports_clear_error_for_mismatched_mole_fraction_column(tmp_path, 
 
 def test_resolve_args_pure_model_never_touches_mole_fraction():
     spec = get_spec("8")
-    args = cli.build_parser().parse_args(["--input_csv", "in.csv", "--model_dir", "d", "--output_csv", "out.csv"])
+    args = cli.build_parser().parse_args(
+        ["--input_csv", "in.csv", "--model_dir", "d", "--output_csv", "out.csv"])
     resolved = cli.resolve_args(args, spec)
     assert resolved.mole_fraction_col is None
 
@@ -135,7 +138,8 @@ def test_action_data_fetches_and_saves_curated_csv(monkeypatch, tmp_path, capsys
         ]
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
-    monkeypatch.setattr("qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df())
+    monkeypatch.setattr("ilqspr.data.cleaning.fetch_curated_dataset",
+                        lambda *a, **k: _fake_curated_df())
 
     rc = cli.main([])
     assert rc == 0
@@ -147,13 +151,15 @@ def test_action_data_fetches_and_saves_curated_csv(monkeypatch, tmp_path, capsys
 
 
 def test_action_data_reports_error_for_unmatched_property(monkeypatch, capsys):
-    answers = iter(["2", "not-a-real-property", "", "none", "none", "5", "out.csv"])
+    answers = iter(["2", "not-a-real-property", "",
+                   "none", "none", "5", "out.csv"])
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
 
     def raise_value_error(*a, **k):
         raise ValueError("No property matching 'not-a-real-property' found.")
 
-    monkeypatch.setattr("qspr_il.data.cleaning.fetch_curated_dataset", raise_value_error)
+    monkeypatch.setattr(
+        "ilqspr.data.cleaning.fetch_curated_dataset", raise_value_error)
 
     rc = cli.main([])
     assert rc == 1
@@ -177,15 +183,17 @@ def test_action_both_chains_into_matching_prediction_model(monkeypatch, tmp_path
         ]
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
-    monkeypatch.setattr("qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df(n=1))
+    monkeypatch.setattr("ilqspr.data.cleaning.fetch_curated_dataset",
+                        lambda *a, **k: _fake_curated_df(n=1))
     monkeypatch.setattr(
-        "qspr_il.cli.find_spec",
+        "ilqspr.cli.find_spec",
         lambda property_name, solvent_label: get_spec("8"),  # density, pure IL
     )
-    from qspr_il.models.engine import load_models_and_metadata as real_load_models_and_metadata
+    from ilqspr.models.engine import load_models_and_metadata as real_load_models_and_metadata
 
     monkeypatch.setattr(
-        "qspr_il.cli.load_models_and_metadata", lambda model_dir: real_load_models_and_metadata(fake_ensemble_dir)
+        "ilqspr.cli.load_models_and_metadata", lambda model_dir: real_load_models_and_metadata(
+            fake_ensemble_dir)
     )
 
     rc = cli.main([])
@@ -210,7 +218,8 @@ def test_action_both_skips_prediction_when_no_matching_model(monkeypatch, tmp_pa
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
     monkeypatch.setattr(
-        "qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df(property_name="Viscosity", n=1)
+        "ilqspr.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df(
+            property_name="Viscosity", n=1)
     )
 
     rc = cli.main([])
@@ -258,7 +267,7 @@ def test_action_both_auto_trains_and_predicts_when_no_matching_model(monkeypatch
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
     monkeypatch.setattr(
-        "qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
+        "ilqspr.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
     )
 
     rc = cli.main([])
@@ -287,7 +296,7 @@ def test_action_both_can_decline_training_after_no_matching_model(monkeypatch, t
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
     monkeypatch.setattr(
-        "qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
+        "ilqspr.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
     )
 
     rc = cli.main([])

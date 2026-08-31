@@ -15,17 +15,17 @@ Ionic liquids (ILs) are tunable organic salts with negligible vapor pressure, hi
 
 ## Repository Structure
 
-- `qspr_il/` – The installable package: the prediction engine and model registry (`qspr_il/models/`, `qspr_il/registry.py`), the ILThermo data fetch/cleaning pipeline (`qspr_il/data/`), the CLI (`qspr_il/cli.py`), and the Streamlit app (`qspr_il/app.py`)
+- `ilqspr/` – The installable package: the prediction engine and model registry (`ilqspr/models/`, `ilqspr/registry.py`), the ILThermo data fetch/cleaning pipeline (`ilqspr/data/`), the CLI (`ilqspr/cli.py`), and the Streamlit app (`ilqspr/app.py`)
 - `datasets/` – Curated training sets and an external test set
 - `huggingface_space/` – Standalone export for deploying the Streamlit app to Hugging Face Spaces
 - `figures/` - Contains the README figure
 - `results/` - Contains generated prediction files and interactive UMAP visualizations (`results/interactive_umap/`) comparing the training data to the external test set for each model
 - `tests/` - Pytest suite
-- `docs/` - Sphinx documentation (built via autodoc against `qspr_il`)
+- `docs/` - Sphinx documentation (built via autodoc against `ilqspr`)
 
 ## Datasets and Models
 
-Training datasets are sourced from the [ILThermo database](https://ilthermo.boulder.nist.gov/). Data acquisition used to depend on an external tool, [pyIonics](https://github.com/kammmran/pyionics); that tool is now vendored permanently inside `qspr_il.data.ionics` (pyIonics itself is being deprecated as a standalone package). The "duplicate removal, consistency checks, and standardization" step is implemented in `qspr_il.data.cleaning` — see the [data pipeline docs](docs/data_pipeline.rst) for details, including known limitations of the underlying data source, and for how to regenerate a curated dataset yourself.
+Training datasets are sourced from the [ILThermo database](https://ilthermo.boulder.nist.gov/). Data acquisition used to depend on an external tool, [pyIonics](https://github.com/kammmran/pyionics); that tool is now vendored permanently inside `ilqspr.data.ionics` (pyIonics itself is being deprecated as a standalone package). The "duplicate removal, consistency checks, and standardization" step is implemented in `ilqspr.data.cleaning` — see the [data pipeline docs](docs/data_pipeline.rst) for details, including known limitations of the underlying data source, and for how to regenerate a curated dataset yourself.
 
 This pipeline isn't limited to density and refractive index — any of the ~55 properties ILThermo tracks (viscosity, surface tension, thermal conductivity, and more) can be fetched and cleaned over any temperature/pressure range you choose. Both `python qspr.py` and the Streamlit app ask up front whether you want to run a prediction model, fetch & clean data, or both (fetch data, then immediately run the matching trained model on it if one exists for that property).
 
@@ -70,7 +70,7 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[gui,dev,docs]"
 ```
 
-This one command (verified against a clean environment) installs `qspr_il`
+This one command (verified against a clean environment) installs `ilqspr`
 itself in editable mode plus everything needed to predict, run the Streamlit
 app (`gui`), run the tests (`dev`), and build the docs (`docs`). Drop extras
 you don't need, e.g. `pip install -e .` alone for just the core prediction
@@ -97,7 +97,7 @@ conda install xgboost=2.1.4
 python -m pip install -e ".[gui,dev,docs]"
 ```
 
-Either way, `pip install -e .` is what makes `import qspr_il` and the
+Either way, `pip install -e .` is what makes `import ilqspr` and the
 `qspr-il-predict` console-script command work -- it's not optional, unlike
 the bracketed extras.
 
@@ -180,7 +180,7 @@ Default: `Temperature`.
 If not indicated, it will take 298.15 K as a default value.
 
 `--model_dir MODEL_DIR`
-Directory containing the trained ensemble model and metadata. Defaults to the selected model's bundled directory under `qspr_il/models/`.
+Directory containing the trained ensemble model and metadata. Defaults to the selected model's bundled directory under `ilqspr/models/`.
 
 `--output_csv OUTPUT_CSV`
 Path to save the output CSV with predictions.
@@ -200,7 +200,7 @@ A Streamlit app provides a graphical alternative to the CLI:
 
 ```bash
 python -m pip install -e ".[gui]"
-streamlit run qspr_il/app.py
+streamlit run ilqspr/app.py
 ```
 
 It supports the same 8 models, either via CSV upload or a single-SMILES entry form. See `docs/streamlit_app.rst` for how this is packaged for deployment to Hugging Face Spaces.
@@ -212,7 +212,7 @@ It supports the same 8 models, either via CSV upload or a single-SMILES entry fo
 - `density_ethanol_neighbors5_dist01.html`, `density_isopropanol_neighbors5_dist01.html`, `density_water_neighbors5_dist01.html`
 - `ri_ethanol_neighbors5_dist01.html`, `ri_isopropanol_neighbors5_dist01.html`, `ri_water_neighbors5_dist01.html`
 
-Open any of them directly in a browser, or run a mixture model in the Streamlit app -- the matching one appears as a collapsed expander right below the prediction results (`streamlit run qspr_il/app.py`). See `docs/results.rst` for details.
+Open any of them directly in a browser, or run a mixture model in the Streamlit app -- the matching one appears as a collapsed expander right below the prediction results (`streamlit run ilqspr/app.py`). See `docs/results.rst` for details.
 
 Prediction results can also be downloaded as a PDF report (a summary, distribution/uncertainty charts, and a results table), alongside the usual CSV download.
 

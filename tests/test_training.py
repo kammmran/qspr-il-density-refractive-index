@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from qspr_il.models.engine import load_models_and_metadata, predict, prepare_input
-from qspr_il.models.training import DEFAULT_HYPERPARAMETERS, select_usable_descriptors, train_ensemble
+from ilqspr.models.engine import load_models_and_metadata, predict, prepare_input
+from ilqspr.models.training import DEFAULT_HYPERPARAMETERS, select_usable_descriptors, train_ensemble
 
 # A handful of real, distinct, valid IL SMILES so Mordred descriptor calculation succeeds and
 # GroupKFold has enough unique groups to split on.
@@ -14,7 +14,8 @@ _SMILES_POOL = [
     "CCCCN1C=C[N+](=C1)C.F[P-](F)(F)(F)(F)F",
     "CCN1C=C[N+](=C1)C.[N-](S(=O)(=O)C(F)(F)F)S(=O)(=O)C(F)(F)F",
 ]
-_FAST_HYPERPARAMETERS = {"max_depth": 3, "n_estimators": 15, "learning_rate": 0.3}
+_FAST_HYPERPARAMETERS = {"max_depth": 3,
+                         "n_estimators": 15, "learning_rate": 0.3}
 
 
 def _pure_dataset(repeats: int = 3) -> pd.DataFrame:
@@ -40,7 +41,8 @@ def test_select_usable_descriptors_drops_missing_and_constant_columns():
             [3.0, 1.0, 5.0],
         ]
     )
-    kept = select_usable_descriptors(matrix, ["varies", "mostly_missing", "constant"])
+    kept = select_usable_descriptors(
+        matrix, ["varies", "mostly_missing", "constant"])
     assert kept == ["varies"]
 
 
@@ -88,8 +90,10 @@ def test_train_ensemble_mixture_uses_mole_fraction_feature(tmp_path):
     assert len(ensemble.models) == 2
 
     reloaded = load_models_and_metadata(tmp_path)
-    data = pd.DataFrame({"SMILES": [_SMILES_POOL[0]], "Temperature": [298.15], "Mole_fraction": [0.3]})
-    prepared = prepare_input(data, smiles_col="SMILES", temp_col="Temperature", mole_fraction_col="Mole_fraction")
+    data = pd.DataFrame({"SMILES": [_SMILES_POOL[0]], "Temperature": [
+                        298.15], "Mole_fraction": [0.3]})
+    prepared = prepare_input(data, smiles_col="SMILES",
+                             temp_col="Temperature", mole_fraction_col="Mole_fraction")
     result = predict(prepared, reloaded, mole_fraction_col="Mole_fraction")
     assert not result["prediction_mean"].isna().any()
 
@@ -117,7 +121,8 @@ def test_train_ensemble_reduces_model_count_for_few_unique_compounds(tmp_path):
         progress_callback=messages.append,
     )
     assert len(ensemble.models) <= 2
-    assert any("training" in msg.lower() and "not" in msg.lower() for msg in messages) or len(ensemble.models) == 2
+    assert any("training" in msg.lower() and "not" in msg.lower()
+               for msg in messages) or len(ensemble.models) == 2
     reloaded = load_models_and_metadata(tmp_path)
     assert len(reloaded.models) == len(ensemble.models)
 

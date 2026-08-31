@@ -1,13 +1,14 @@
 import json
 
-from qspr_il.data.ionics import client
+from ilqspr.data.ionics import client
 
 
 def test_getidsets_builds_expected_url_and_saves_under_data_root(tmp_path, mock_ilthermo_responses):
     save_path = client.getIdsets(prop="dens", data_root=tmp_path)
     assert save_path.exists()
     assert str(tmp_path) in str(save_path)
-    assert any("ilsearch" in url and "prp=" in url for url in mock_ilthermo_responses)
+    assert any(
+        "ilsearch" in url and "prp=" in url for url in mock_ilthermo_responses)
 
 
 def test_getidsets_unknown_property_raises(tmp_path, mock_ilthermo_responses):
@@ -26,7 +27,8 @@ def test_getdata_downloads_each_set_under_data_root(tmp_path, mock_ilthermo_resp
 
 def test_download_idsets_reports_progress(tmp_path, mock_ilthermo_responses):
     calls = []
-    client.download_idsets(["a", "b"], output_dir=tmp_path, progress_callback=lambda i, total, setid: calls.append((i, total, setid)))
+    client.download_idsets(["a", "b"], output_dir=tmp_path,
+                           progress_callback=lambda i, total, setid: calls.append((i, total, setid)))
     assert calls == [(1, 2, "a"), (2, 2, "b")]
 
 
@@ -47,7 +49,8 @@ def test_flatten_idset_strips_sub_tags_and_builds_component_columns():
         "component 1 name",
         "component 1 formula",
     ]
-    assert rows == [["42", "Doe, J., 2021 et al.", "298.15", "103", "C001", "Water2", "O"]]
+    assert rows == [["42", "Doe, J., 2021 et al.",
+                     "298.15", "103", "C001", "Water2", "O"]]
 
 
 def test_flatten_idset_empty_when_missing_dhead_or_data():

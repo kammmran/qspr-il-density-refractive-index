@@ -57,7 +57,7 @@ Pure ionic-liquid models do not require a mole-fraction column.
 Repository structure
 --------------------
 
-* ``qspr_il/`` is the installable package: the prediction engine and model
+* ``ilqspr/`` is the installable package: the prediction engine and model
   registry (:doc:`engine`), the data fetch/cleaning pipeline (:doc:`data_pipeline`),
   the CLI, and the Streamlit app (:doc:`streamlit_app`).
 * ``datasets/`` contains curated training sets and the external test set.
@@ -73,9 +73,9 @@ Datasets and Models
 Training datasets are sourced from the `ILThermo database
 <https://ilthermo.boulder.nist.gov/>`_. Data acquisition and curation used to
 depend on an external tool, `pyIonics <https://github.com/kammmran/pyionics>`_;
-that tool is now vendored permanently inside :mod:`qspr_il.data.ionics`, and
+that tool is now vendored permanently inside :mod:`ilqspr.data.ionics`, and
 the "duplicate removal, consistency checks, and standardization" step is
-implemented in :mod:`qspr_il.data.cleaning`. See :doc:`data_pipeline` for
+implemented in :mod:`ilqspr.data.cleaning`. See :doc:`data_pipeline` for
 details.
 
 Molecular structures were represented using 2D descriptors calculated with the

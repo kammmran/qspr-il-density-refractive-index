@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from qspr_il.data import cleaning
+from ilqspr.data import cleaning
 
 # A real, valid SMILES for an imidazolium-based IL and its cation/anion parts,
 # used across tests so RDKit standardization succeeds.
@@ -67,7 +67,8 @@ def test_flag_duplicates_exact_duplicate_dropped():
             "Property_value": [1000.0, 1000.0, 900.0],
         }
     )
-    flags = cleaning.flag_duplicates(df, ["IL_SMILES", "Temperature (K)"], "Property_value")
+    flags = cleaning.flag_duplicates(
+        df, ["IL_SMILES", "Temperature (K)"], "Property_value")
     assert flags.tolist() == ["unique", "duplicate_dropped", "unique"]
 
 
@@ -79,7 +80,8 @@ def test_flag_duplicates_conflicting_values_flagged():
             "Property_value": [1000.0, 1200.0],  # >2% apart
         }
     )
-    flags = cleaning.flag_duplicates(df, ["IL_SMILES", "Temperature (K)"], "Property_value")
+    flags = cleaning.flag_duplicates(
+        df, ["IL_SMILES", "Temperature (K)"], "Property_value")
     assert (flags == "conflicting_duplicate").all()
 
 
@@ -107,7 +109,8 @@ def test_filter_conditions_pressure_range_none_skips_pressure_filter():
 
 def test_filter_property_range():
     df = pd.DataFrame({"Property_value": [500.0, 5000.0, 1200.0]})
-    filtered = cleaning.filter_property_range(df, "Property_value", (300.0, 3000.0))
+    filtered = cleaning.filter_property_range(
+        df, "Property_value", (300.0, 3000.0))
     assert filtered["Property_value"].tolist() == [500.0, 1200.0]
 
 
@@ -129,16 +132,20 @@ def test_parse_numeric_unparseable_returns_nan():
 def test_build_curated_dataset_handles_value_with_uncertainty_suffix():
     # Regression test: a real ILThermo response's property-value cell of "914.7;1.8" used to
     # crash flag_duplicates's float conversion further down the pipeline.
-    raw_df = pd.DataFrame([_pure_raw_row(**{"Specific density, kg/m3 - Liquid": "914.7;1.8"})])
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None)
+    raw_df = pd.DataFrame(
+        [_pure_raw_row(**{"Specific density, kg/m3 - Liquid": "914.7;1.8"})])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
     assert len(curated) == 1
     assert curated.loc[0, "Property_value"] == 914.7
 
 
 def test_build_curated_dataset_reports_progress():
-    raw_df = pd.DataFrame([_pure_raw_row(), _pure_raw_row(**{"idset": "SET2", "Temperature, K": 300.0})])
+    raw_df = pd.DataFrame([_pure_raw_row(), _pure_raw_row(
+        **{"idset": "SET2", "Temperature, K": 300.0})])
     messages = []
-    cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None, progress_callback=messages.append)
+    cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, progress_callback=messages.append)
     assert any("Standardizing" in m for m in messages)
     assert any("temperature/pressure" in m for m in messages)
     assert any("Deduplication" in m for m in messages)
@@ -146,7 +153,8 @@ def test_build_curated_dataset_reports_progress():
 
 def test_build_curated_dataset_pure_columns_match_target_schema():
     raw_df = pd.DataFrame([_pure_raw_row()])
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None)
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
     assert list(curated.columns) == cleaning.GENERIC_PURE_COLUMNS
     assert len(curated) == 1
     assert curated.loc[0, "Property"] == "Density"
@@ -157,19 +165,23 @@ def test_build_curated_dataset_pure_columns_match_target_schema():
 
 def test_build_curated_dataset_mixture_columns_match_target_schema():
     raw_df = pd.DataFrame([_mixture_raw_row()])
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name="ethanol")
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol")
     assert list(curated.columns) == cleaning.GENERIC_MIXTURE_COLUMNS
     assert len(curated) == 1
     assert curated.loc[0, "Solvent_name"] == "ethanol"
-    assert curated.loc[0, "IL_name"] == "1-butyl-3-methylimidazolium tetrafluoroborate"
+    assert curated.loc[0,
+                       "IL_name"] == "1-butyl-3-methylimidazolium tetrafluoroborate"
     assert curated.loc[0, "Property_value"] == 900.0
 
 
 def test_build_curated_dataset_mole_fraction_il_when_raw_value_is_solvents():
     # ILThermo reported this row's "Mole fraction" against the solvent (ethanol) -- confirmed
     # via the "Mole fraction of ethanol" raw column name in the fixture.
-    raw_df = pd.DataFrame([_mixture_raw_row(**{"Mole fraction of ethanol": 0.4})])
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name="ethanol")
+    raw_df = pd.DataFrame(
+        [_mixture_raw_row(**{"Mole fraction of ethanol": 0.4})])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol")
     assert curated.loc[0, "Mole fraction of solvent"] == 0.4
     assert curated.loc[0, "Mole_fraction_IL"] == pytest.approx(0.6)
 
@@ -188,7 +200,8 @@ def test_build_curated_dataset_mole_fraction_il_when_raw_value_is_ils():
         ]
     )
     raw_df = raw_df.drop(columns=["Mole fraction of ethanol"])
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name="ethanol")
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol")
     assert curated.loc[0, "Mole_fraction_IL"] == pytest.approx(0.6)
     assert curated.loc[0, "Mole fraction of solvent"] == pytest.approx(0.4)
 
@@ -199,7 +212,8 @@ def test_build_curated_dataset_handles_concatenated_idsets_with_different_column
     # idsets therefore use *differently-named* "Mole fraction of <compound>" columns. After
     # concatenation, each row must pull its own data from its own idset's columns, not get
     # matched against some other row's compound/column by a single global column pick.
-    other_il_smiles = "CCN1C=C[N+](=C1)C.F[B-](F)(F)F"  # a second, different, valid IL
+    # a second, different, valid IL
+    other_il_smiles = "CCN1C=C[N+](=C1)C.F[B-](F)(F)F"
     row_a = _mixture_raw_row(
         **{
             "idset": "SET_A",
@@ -218,40 +232,53 @@ def test_build_curated_dataset_handles_concatenated_idsets_with_different_column
     row_b["Mole fraction of 1-ethyl-3-methylimidazolium tetrafluoroborate"] = 0.7
     row_b["Specific density, kg/m3 - Liquid"] = 1100.0
 
-    raw_df = pd.concat([pd.DataFrame([row_a]), pd.DataFrame([row_b])], ignore_index=True)
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name="ethanol")
+    raw_df = pd.concat(
+        [pd.DataFrame([row_a]), pd.DataFrame([row_b])], ignore_index=True)
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol")
 
     assert len(curated) == 2
     by_setid = curated.set_index("setid")
-    assert by_setid.loc["SET_A", "IL_name"] == "1-butyl-3-methylimidazolium tetrafluoroborate"
+    assert by_setid.loc["SET_A",
+                        "IL_name"] == "1-butyl-3-methylimidazolium tetrafluoroborate"
     assert by_setid.loc["SET_A", "Property_value"] == 1000.0
-    assert by_setid.loc["SET_A", "Mole_fraction_IL"] == pytest.approx(0.7)  # 0.3 was the solvent's
-    assert by_setid.loc["SET_B", "IL_name"] == "1-ethyl-3-methylimidazolium tetrafluoroborate"
+    assert by_setid.loc["SET_A", "Mole_fraction_IL"] == pytest.approx(
+        0.7)  # 0.3 was the solvent's
+    assert by_setid.loc["SET_B",
+                        "IL_name"] == "1-ethyl-3-methylimidazolium tetrafluoroborate"
     assert by_setid.loc["SET_B", "Property_value"] == 1100.0
-    assert by_setid.loc["SET_B", "Mole_fraction_IL"] == pytest.approx(0.7)  # reported directly against the IL
+    assert by_setid.loc["SET_B", "Mole_fraction_IL"] == pytest.approx(
+        0.7)  # reported directly against the IL
 
 
 def test_build_curated_dataset_works_for_a_non_density_property():
     # Confirms the pipeline is property-agnostic: viscosity works the same way as density.
-    raw_df = pd.DataFrame([_pure_raw_row(**{"Specific density, kg/m3 - Liquid": None, "Viscosity, mPa*s - Liquid": 12.5})])
+    raw_df = pd.DataFrame([_pure_raw_row(
+        **{"Specific density, kg/m3 - Liquid": None, "Viscosity, mPa*s - Liquid": 12.5})])
     raw_df = raw_df.drop(columns=["Specific density, kg/m3 - Liquid"])
-    curated = cleaning.build_curated_dataset(raw_df, "Viscosity", solvent_name=None)
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Viscosity", solvent_name=None)
     assert len(curated) == 1
     assert curated.loc[0, "Property"] == "Viscosity"
     assert curated.loc[0, "Property_value"] == 12.5
 
 
 def test_build_curated_dataset_drops_unparseable_smiles_when_pubchem_also_fails(monkeypatch):
-    raw_df = pd.DataFrame([_pure_raw_row(**{"component 1 SMILES": "C12H19F6N3O4S2"})])  # a bare formula, not SMILES
-    monkeypatch.setattr(cleaning, "resolve_smiles_by_name", lambda name, timeout=10.0: None)  # PubChem: no match either
+    # a bare formula, not SMILES
+    raw_df = pd.DataFrame(
+        [_pure_raw_row(**{"component 1 SMILES": "C12H19F6N3O4S2"})])
+    monkeypatch.setattr(cleaning, "resolve_smiles_by_name",
+                        lambda name, timeout=10.0: None)  # PubChem: no match either
 
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None)
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
     assert curated.empty
 
 
 def test_build_curated_dataset_filters_by_temperature_range():
     raw_df = pd.DataFrame([_pure_raw_row(**{"Temperature, K": 1000.0})])
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None, temp_range=(253.0, 573.0))
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, temp_range=(253.0, 573.0))
     assert curated.empty
 
 
@@ -260,18 +287,23 @@ def test_list_available_properties_includes_more_than_density_and_ri():
     assert "density" in properties
     assert "refractive-index" in properties
     assert "viscosity" in properties
-    assert len(properties) > 10  # not just the 2 properties this project trains models for
+    # not just the 2 properties this project trains models for
+    assert len(properties) > 10
 
 
 def test_resolve_property_display_name_matches_hyphenated_short_name():
-    idsets_json = {"res": [["id1", "auth", "Density", "Liquid"], ["id2", "auth", "Viscosity", "Liquid"]]}
-    assert cleaning.resolve_property_display_name(idsets_json, "density") == "Density"
-    assert cleaning.resolve_property_display_name(idsets_json, "refractive-index") is None
+    idsets_json = {"res": [["id1", "auth", "Density", "Liquid"], [
+        "id2", "auth", "Viscosity", "Liquid"]]}
+    assert cleaning.resolve_property_display_name(
+        idsets_json, "density") == "Density"
+    assert cleaning.resolve_property_display_name(
+        idsets_json, "refractive-index") is None
 
 
 def test_resolve_property_display_name_fuzzy_substring_match():
     idsets_json = {"res": [["id1", "auth", "Refractive index", "Liquid"]]}
-    assert cleaning.resolve_property_display_name(idsets_json, "refractive") == "Refractive index"
+    assert cleaning.resolve_property_display_name(
+        idsets_json, "refractive") == "Refractive index"
 
 
 def test_resolve_smiles_by_name_success(monkeypatch):
@@ -279,7 +311,8 @@ def test_resolve_smiles_by_name_success(monkeypatch):
         status_code = 200
         text = "CCO\n"
 
-    monkeypatch.setattr(cleaning.requests, "get", lambda url, timeout=None: _FakeResponse())
+    monkeypatch.setattr(cleaning.requests, "get", lambda url,
+                        timeout=None: _FakeResponse())
     assert cleaning.resolve_smiles_by_name("ethanol") == "CCO"
 
 
@@ -288,7 +321,8 @@ def test_resolve_smiles_by_name_not_found_returns_none(monkeypatch):
         status_code = 404
         text = ""
 
-    monkeypatch.setattr(cleaning.requests, "get", lambda url, timeout=None: _FakeResponse())
+    monkeypatch.setattr(cleaning.requests, "get", lambda url,
+                        timeout=None: _FakeResponse())
     assert cleaning.resolve_smiles_by_name("not-a-real-compound") is None
 
 
@@ -306,7 +340,8 @@ def test_resolve_smiles_by_name_tries_bracket_variant(monkeypatch):
         return _FakeResponse(ok=len(calls) == 2)
 
     monkeypatch.setattr(cleaning.requests, "get", fake_get)
-    result = cleaning.resolve_smiles_by_name("bis[(trifluoromethyl)sulfonyl]imide")
+    result = cleaning.resolve_smiles_by_name(
+        "bis[(trifluoromethyl)sulfonyl]imide")
     assert result == "CCO"
     assert len(calls) == 2
 
@@ -323,8 +358,10 @@ def test_resolve_smiles_by_name_rejects_ambiguous_multi_match(monkeypatch):
             "CCCCCCCCCCN1C=C[N+](=C1)C.C(F)(F)(F)S(=O)(=O)[N-]S(=O)(=O)C(F)(F)F\n"
         )
 
-    monkeypatch.setattr(cleaning.requests, "get", lambda url, timeout=None: _FakeResponse())
-    assert cleaning.resolve_smiles_by_name("bis[(trifluoromethyl)sulfonyl]imide") is None
+    monkeypatch.setattr(cleaning.requests, "get", lambda url,
+                        timeout=None: _FakeResponse())
+    assert cleaning.resolve_smiles_by_name(
+        "bis[(trifluoromethyl)sulfonyl]imide") is None
 
 
 def test_resolve_smiles_by_name_empty_input_returns_none():
@@ -337,7 +374,8 @@ def test_formula_matches_same_compound():
 
 
 def test_formula_matches_rejects_different_compound():
-    assert not cleaning.formula_matches("CCO", "C8H15BF4N2")  # ethanol vs the IL's real formula
+    # ethanol vs the IL's real formula
+    assert not cleaning.formula_matches("CCO", "C8H15BF4N2")
 
 
 def test_formula_matches_no_expected_formula_passes():
@@ -358,10 +396,13 @@ IL_FORMULA = "C8H15BF4N2"
 def test_build_curated_dataset_falls_back_to_pubchem_for_unresolved_il(monkeypatch):
     # The id-based addSmiles lookup produced a bare formula (not real SMILES); PubChem
     # resolves it by name instead of the row being dropped.
-    raw_df = pd.DataFrame([_pure_raw_row(**{"component 1 SMILES": IL_FORMULA})])
-    monkeypatch.setattr(cleaning, "resolve_smiles_by_name", lambda name, timeout=10.0: IL_SMILES)
+    raw_df = pd.DataFrame(
+        [_pure_raw_row(**{"component 1 SMILES": IL_FORMULA})])
+    monkeypatch.setattr(cleaning, "resolve_smiles_by_name",
+                        lambda name, timeout=10.0: IL_SMILES)
 
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None)
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
     assert len(curated) == 1
     assert curated.loc[0, "IL_SMILES"] == IL_SMILES
 
@@ -370,20 +411,27 @@ def test_build_curated_dataset_rejects_pubchem_match_with_wrong_formula(monkeypa
     # Regression test: PubChem can return a single, unambiguous-looking match that is
     # nonetheless the wrong compound -- confirmed against a real IL salt name. The formula
     # cross-check must catch this even though there's no ambiguity signal to rely on.
-    raw_df = pd.DataFrame([_pure_raw_row(**{"component 1 SMILES": IL_FORMULA})])
+    raw_df = pd.DataFrame(
+        [_pure_raw_row(**{"component 1 SMILES": IL_FORMULA})])
     wrong_but_valid_smiles = "CCO"  # ethanol: valid SMILES, but not C8H15BF4N2
-    monkeypatch.setattr(cleaning, "resolve_smiles_by_name", lambda name, timeout=10.0: wrong_but_valid_smiles)
+    monkeypatch.setattr(cleaning, "resolve_smiles_by_name",
+                        lambda name, timeout=10.0: wrong_but_valid_smiles)
 
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None)
-    assert curated.empty  # wrong-formula candidate rejected, falls back to the (unparseable) formula, row dropped
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
+    # wrong-formula candidate rejected, falls back to the (unparseable) formula, row dropped
+    assert curated.empty
 
 
 def test_build_curated_dataset_drops_when_pubchem_fallback_disabled(monkeypatch):
-    raw_df = pd.DataFrame([_pure_raw_row(**{"component 1 SMILES": IL_FORMULA})])
+    raw_df = pd.DataFrame(
+        [_pure_raw_row(**{"component 1 SMILES": IL_FORMULA})])
     calls = []
-    monkeypatch.setattr(cleaning, "resolve_smiles_by_name", lambda name, timeout=10.0: calls.append(name) or IL_SMILES)
+    monkeypatch.setattr(cleaning, "resolve_smiles_by_name",
+                        lambda name, timeout=10.0: calls.append(name) or IL_SMILES)
 
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None, use_pubchem_fallback=False)
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, use_pubchem_fallback=False)
     assert curated.empty
     assert calls == []  # fallback never even attempted
 
@@ -391,14 +439,18 @@ def test_build_curated_dataset_drops_when_pubchem_fallback_disabled(monkeypatch)
 def test_build_curated_dataset_caches_repeated_name_lookups(monkeypatch):
     raw_df = pd.DataFrame(
         [
-            _pure_raw_row(**{"component 1 SMILES": IL_FORMULA, "idset": "SET1"}),
-            _pure_raw_row(**{"component 1 SMILES": IL_FORMULA, "idset": "SET2", "Temperature, K": 300.0}),
+            _pure_raw_row(
+                **{"component 1 SMILES": IL_FORMULA, "idset": "SET1"}),
+            _pure_raw_row(**{"component 1 SMILES": IL_FORMULA,
+                          "idset": "SET2", "Temperature, K": 300.0}),
         ]
     )
     calls = []
-    monkeypatch.setattr(cleaning, "resolve_smiles_by_name", lambda name, timeout=10.0: calls.append(name) or IL_SMILES)
+    monkeypatch.setattr(cleaning, "resolve_smiles_by_name",
+                        lambda name, timeout=10.0: calls.append(name) or IL_SMILES)
 
-    curated = cleaning.build_curated_dataset(raw_df, "Density", solvent_name=None)
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
     assert len(curated) == 2
     assert len(calls) == 1  # same compound name looked up only once
 
@@ -411,4 +463,5 @@ def test_fetch_curated_dataset_raises_clear_error_for_unmatched_property(tmp_pat
 
     monkeypatch.setattr(cleaning.ionics_client, "getIdsets", fake_getIdsets)
     with pytest.raises(ValueError, match="not-a-real-property"):
-        cleaning.fetch_curated_dataset("not-a-real-property", None, data_root=tmp_path)
+        cleaning.fetch_curated_dataset(
+            "not-a-real-property", None, data_root=tmp_path)

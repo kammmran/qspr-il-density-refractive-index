@@ -3,7 +3,7 @@
 Replaces the 8 near-duplicate ``apply_*.py`` scripts that used to live under
 ``models/<name>/``. All of them shared the same standardization, descriptor
 calculation, and ensemble-prediction logic; this module keeps that logic in
-one place, parametrized by a :class:`~qspr_il.registry.ModelSpec`.
+one place, parametrized by a :class:`~ilqspr.registry.ModelSpec`.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
 if TYPE_CHECKING:
-    from qspr_il.registry import ModelSpec
+    from ilqspr.registry import ModelSpec
 
 DEFAULT_TEMPERATURE_K = 298.15
 
@@ -114,15 +114,17 @@ def load_models_and_metadata(model_dir: str | Path) -> LoadedEnsemble:
     a contiguous run starting at 1) from a directory.
 
     Ensembles shipped with this project always have exactly 5; a freshly trained one (see
-    :mod:`qspr_il.models.training`) may have fewer if there weren't enough unique compounds for
+    :mod:`ilqspr.models.training`) may have fewer if there weren't enough unique compounds for
     a full 5-fold split. Raises :class:`FileNotFoundError` if there's no ``model_1.joblib`` at
     all, or if the numbering has a gap (e.g. ``model_1`` and ``model_3`` exist but ``model_2``
     doesn't) -- a valid ensemble is always a contiguous run from 1, never a sparse one.
     """
     model_dir = Path(model_dir)
-    indices = [int(m.group(1)) for p in model_dir.glob("model_*.joblib") if (m := re.match(r"model_(\d+)$", p.stem))]
+    indices = [int(m.group(1)) for p in model_dir.glob(
+        "model_*.joblib") if (m := re.match(r"model_(\d+)$", p.stem))]
     if not indices:
-        raise FileNotFoundError(f"No model_N.joblib files found in {model_dir}.")
+        raise FileNotFoundError(
+            f"No model_N.joblib files found in {model_dir}.")
 
     models = []
     model_metadata = []
@@ -130,7 +132,8 @@ def load_models_and_metadata(model_dir: str | Path) -> LoadedEnsemble:
         model_path = model_dir / f"model_{i}.joblib"
         metadata_path = model_dir / f"metadata_{i}.json"
         if not model_path.exists() or not metadata_path.exists():
-            raise FileNotFoundError(f"Model or metadata file for model {i} not found in {model_dir}.")
+            raise FileNotFoundError(
+                f"Model or metadata file for model {i} not found in {model_dir}.")
         models.append(joblib.load(model_path))
         with open(metadata_path, "r") as f:
             model_metadata.append(json.load(f))
@@ -141,7 +144,8 @@ def calculate_descriptors(smiles: str, required_descriptors: list[str]) -> tuple
     """Compute the mean Mordred descriptor vector across all components of a multi-part SMILES."""
     smiles_list = smiles.split(".")
     calc = Calculator(mordred_descriptors, ignore_3D=True)
-    calc.descriptors = [d for d in calc.descriptors if str(d) in required_descriptors]
+    calc.descriptors = [d for d in calc.descriptors if str(
+        d) in required_descriptors]
     descriptor_vectors = []
     descriptor_names = None
     for smi in smiles_list:
@@ -150,14 +154,16 @@ def calculate_descriptors(smiles: str, required_descriptors: list[str]) -> tuple
             desc = calc(mol)
             if descriptor_names is None:
                 descriptor_names = [str(d) for d in desc.keys()]
-            desc_vector = [np.nan if isinstance(value, Missing) else value for _, value in desc.items()]
+            desc_vector = [np.nan if isinstance(
+                value, Missing) else value for _, value in desc.items()]
             descriptor_vectors.append(desc_vector)
         else:
             print(f"Invalid SMILES: {smi}")
     if descriptor_vectors:
         descriptor_vectors = np.array(descriptor_vectors, dtype=np.float64)
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=RuntimeWarning, message="Mean of empty slice")
+            warnings.filterwarnings(
+                "ignore", category=RuntimeWarning, message="Mean of empty slice")
             mean_descriptor_vector = np.nanmean(descriptor_vectors, axis=0)
         return mean_descriptor_vector, descriptor_names
     print(f"No valid molecules found for SMILES: {smiles}")
@@ -168,7 +174,8 @@ def process_il_smiles_list(smiles_list: list[str], required_descriptors: list[st
     """Compute descriptor vectors for a whole column of (possibly multi-component) SMILES."""
     descriptor_vectors = []
     for smiles in smiles_list:
-        mean_descriptor_vector, _ = calculate_descriptors(smiles, required_descriptors)
+        mean_descriptor_vector, _ = calculate_descriptors(
+            smiles, required_descriptors)
         if mean_descriptor_vector is not None:
             descriptor_vectors.append(mean_descriptor_vector)
         else:
@@ -198,7 +205,8 @@ def prepare_input(
     data = data.copy()
 
     if smiles_col not in data.columns:
-        raise ValueError(f"SMILES column '{smiles_col}' not found in input data. Available columns: {list(data.columns)}")
+        raise ValueError(
+            f"SMILES column '{smiles_col}' not found in input data. Available columns: {list(data.columns)}")
 
     _report(f"Standardizing {len(data)} SMILES...")
     standardized_smiles = []
@@ -262,18 +270,22 @@ def predict(
     n_models = len(ensemble.models)
 
     for i, (model, metadata) in enumerate(zip(ensemble.models, ensemble.metadata), 1):
-        _report(f"Model {i}/{n_models}: calculating Mordred descriptors for {len(all_smiles_list)} row(s)...")
+        _report(
+            f"Model {i}/{n_models}: calculating Mordred descriptors for {len(all_smiles_list)} row(s)...")
         try:
             required_descriptors_model = metadata["descriptors"]
-            descriptor_array = process_il_smiles_list(all_smiles_list, required_descriptors_model)
+            descriptor_array = process_il_smiles_list(
+                all_smiles_list, required_descriptors_model)
             temperature_array = data[temp_col].values.reshape(-1, 1)
             feature_arrays = [descriptor_array, temperature_array]
             if mole_fraction_col is not None:
-                feature_arrays.append(data[mole_fraction_col].values.reshape(-1, 1))
+                feature_arrays.append(
+                    data[mole_fraction_col].values.reshape(-1, 1))
             descriptor_array = np.hstack(feature_arrays)
         except Exception as e:
             print(f"Error calculating descriptors for Model {i}: {e}")
-            _report(f"Model {i}/{n_models}: descriptor calculation failed ({e}) -- recorded as NaN.")
+            _report(
+                f"Model {i}/{n_models}: descriptor calculation failed ({e}) -- recorded as NaN.")
             predictions.append(pd.Series([np.nan] * len(all_smiles_list)))
             continue
 
@@ -283,12 +295,15 @@ def predict(
             predictions.append(pd.Series(preds))
         except Exception as e:
             print(f"Error processing Model {i}: {e}")
-            _report(f"Model {i}/{n_models}: prediction failed ({e}) -- recorded as NaN.")
+            _report(
+                f"Model {i}/{n_models}: prediction failed ({e}) -- recorded as NaN.")
             predictions.append(pd.Series([np.nan] * len(all_smiles_list)))
 
     _report("Combining ensemble predictions into mean/std...")
-    data["prediction_mean"] = pd.concat(predictions, axis=1).mean(axis=1).round(4)
-    data["prediction_std"] = pd.concat(predictions, axis=1).std(axis=1).round(4)
+    data["prediction_mean"] = pd.concat(
+        predictions, axis=1).mean(axis=1).round(4)
+    data["prediction_std"] = pd.concat(
+        predictions, axis=1).std(axis=1).round(4)
     return data
 
 

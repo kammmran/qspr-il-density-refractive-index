@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from qspr_il.models.engine import (
+from ilqspr.models.engine import (
     calculate_descriptors,
     load_models_and_metadata,
     predict,
@@ -12,7 +12,7 @@ from qspr_il.models.engine import (
     run_prediction,
     standardize_molecule,
 )
-from qspr_il.registry import get as get_spec
+from ilqspr.registry import get as get_spec
 
 
 def test_standardize_molecule_valid_smiles():
@@ -55,7 +55,7 @@ def test_load_models_and_metadata_no_models_raises(tmp_path):
 
 
 def test_load_models_and_metadata_supports_fewer_than_five(fake_ensemble_dir):
-    # A freshly trained ensemble (qspr_il.models.training) may have fewer than 5 members if
+    # A freshly trained ensemble (ilqspr.models.training) may have fewer than 5 members if
     # there weren't enough unique compounds for a full 5-fold split -- a contiguous run
     # starting at 1, however short, is a valid ensemble.
     (fake_ensemble_dir / "model_5.joblib").unlink()
@@ -88,7 +88,8 @@ def test_process_il_smiles_list_invalid_row_is_nan():
 
 def test_prepare_input_mixture_defaults_missing_temperature():
     df = pd.DataFrame({"SMILES": ["CCO"], "Mole_fraction": [0.5]})
-    prepared = prepare_input(df, smiles_col="SMILES", temp_col=None, mole_fraction_col="Mole_fraction")
+    prepared = prepare_input(df, smiles_col="SMILES",
+                             temp_col=None, mole_fraction_col="Mole_fraction")
     assert prepared.loc[0, "Temperature"] == 298.15
     assert "Standardized_IL_SMILES" in prepared.columns
     assert prepared.loc[0, "Changes"] == "No changes"
@@ -96,7 +97,8 @@ def test_prepare_input_mixture_defaults_missing_temperature():
 
 def test_prepare_input_pure_skips_mole_fraction():
     df = pd.DataFrame({"SMILES": ["CCO"]})
-    prepared = prepare_input(df, smiles_col="SMILES", temp_col=None, mole_fraction_col=None)
+    prepared = prepare_input(df, smiles_col="SMILES",
+                             temp_col=None, mole_fraction_col=None)
     assert "Mole_fraction" not in prepared.columns
 
 
@@ -106,34 +108,39 @@ def test_prepare_input_missing_mole_fraction_column_raises_clear_error():
     # downstream with the real cause never surfaced to the caller.
     df = pd.DataFrame({"SMILES": ["CCO"], "Mole_fraction_IL": [0.5]})
     with pytest.raises(ValueError, match="Mole_fraction"):
-        prepare_input(df, smiles_col="SMILES", temp_col=None, mole_fraction_col="Mole_fraction")
+        prepare_input(df, smiles_col="SMILES", temp_col=None,
+                      mole_fraction_col="Mole_fraction")
 
 
 def test_prepare_input_missing_smiles_column_raises_clear_error():
     df = pd.DataFrame({"IL_SMILES": ["CCO"]})
     with pytest.raises(ValueError, match="SMILES"):
-        prepare_input(df, smiles_col="SMILES", temp_col=None, mole_fraction_col=None)
+        prepare_input(df, smiles_col="SMILES",
+                      temp_col=None, mole_fraction_col=None)
 
 
 def test_prepare_input_flags_invalid_smiles_in_changes_column():
     df = pd.DataFrame({"SMILES": ["not a smiles"]})
-    prepared = prepare_input(df, smiles_col="SMILES", temp_col=None, mole_fraction_col=None)
+    prepared = prepare_input(df, smiles_col="SMILES",
+                             temp_col=None, mole_fraction_col=None)
     assert prepared.loc[0, "Changes"] == "Invalid SMILES"
 
 
 def test_run_prediction_output_includes_changes_column(fake_ensemble_dir, sample_pure_prediction_df):
-    from qspr_il.registry import get as get_spec
+    from ilqspr.registry import get as get_spec
 
     spec = get_spec("8")
     ensemble = load_models_and_metadata(fake_ensemble_dir)
-    result = run_prediction(sample_pure_prediction_df, spec, ensemble=ensemble, smiles_col="SMILES")
+    result = run_prediction(sample_pure_prediction_df,
+                            spec, ensemble=ensemble, smiles_col="SMILES")
     assert "Changes" in result.columns
 
 
 def test_predict_per_model_failure_degrades_to_nan(fake_ensemble_dir, sample_prediction_df):
     ensemble = load_models_and_metadata(fake_ensemble_dir)
     # Break one model so its predict() raises.
-    ensemble.models[2].predict = lambda X: (_ for _ in ()).throw(RuntimeError("boom"))
+    ensemble.models[2].predict = lambda X: (
+        _ for _ in ()).throw(RuntimeError("boom"))
 
     prepared = prepare_input(
         sample_prediction_df, smiles_col="SMILES", temp_col="Temperature", mole_fraction_col="Mole_fraction"
@@ -158,7 +165,8 @@ def test_run_prediction_mixture_spec(fake_ensemble_dir, sample_prediction_df):
 def test_run_prediction_pure_spec_excludes_mole_fraction(fake_ensemble_dir, sample_pure_prediction_df):
     spec = get_spec("8")  # Density, pure IL
     ensemble = load_models_and_metadata(fake_ensemble_dir)
-    result = run_prediction(sample_pure_prediction_df, spec, ensemble=ensemble, smiles_col="SMILES")
+    result = run_prediction(sample_pure_prediction_df,
+                            spec, ensemble=ensemble, smiles_col="SMILES")
     assert "prediction_mean" in result.columns
     assert len(result) == len(sample_pure_prediction_df)
 
@@ -182,7 +190,8 @@ def test_run_prediction_reports_ensemble_loading_when_not_cached(fake_ensemble_d
     run_prediction(
         sample_pure_prediction_df,
         spec,
-        ensemble=load_models_and_metadata(fake_ensemble_dir),  # avoid touching the real model_dir
+        # avoid touching the real model_dir
+        ensemble=load_models_and_metadata(fake_ensemble_dir),
         smiles_col="SMILES",
         progress_callback=messages.append,
     )
@@ -192,10 +201,12 @@ def test_run_prediction_reports_ensemble_loading_when_not_cached(fake_ensemble_d
 
 def test_predict_reports_progress_on_model_failure(fake_ensemble_dir, sample_prediction_df):
     ensemble = load_models_and_metadata(fake_ensemble_dir)
-    ensemble.models[2].predict = lambda X: (_ for _ in ()).throw(RuntimeError("boom"))
+    ensemble.models[2].predict = lambda X: (
+        _ for _ in ()).throw(RuntimeError("boom"))
     prepared = prepare_input(
         sample_prediction_df, smiles_col="SMILES", temp_col="Temperature", mole_fraction_col="Mole_fraction"
     )
     messages = []
-    predict(prepared, ensemble, mole_fraction_col="Mole_fraction", progress_callback=messages.append)
+    predict(prepared, ensemble, mole_fraction_col="Mole_fraction",
+            progress_callback=messages.append)
     assert any("Model 3/5: prediction failed" in m for m in messages)
