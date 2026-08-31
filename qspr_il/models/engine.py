@@ -110,11 +110,23 @@ class LoadedEnsemble:
 
 
 def load_models_and_metadata(model_dir: str | Path) -> LoadedEnsemble:
-    """Load the 5-model ensemble (``model_1..5.joblib`` + ``metadata_1..5.json``) from a directory."""
+    """Load an ensemble's ``model_N.joblib`` + ``metadata_N.json`` pairs (N = 1, 2, 3, ...,
+    a contiguous run starting at 1) from a directory.
+
+    Ensembles shipped with this project always have exactly 5; a freshly trained one (see
+    :mod:`qspr_il.models.training`) may have fewer if there weren't enough unique compounds for
+    a full 5-fold split. Raises :class:`FileNotFoundError` if there's no ``model_1.joblib`` at
+    all, or if the numbering has a gap (e.g. ``model_1`` and ``model_3`` exist but ``model_2``
+    doesn't) -- a valid ensemble is always a contiguous run from 1, never a sparse one.
+    """
     model_dir = Path(model_dir)
+    indices = [int(m.group(1)) for p in model_dir.glob("model_*.joblib") if (m := re.match(r"model_(\d+)$", p.stem))]
+    if not indices:
+        raise FileNotFoundError(f"No model_N.joblib files found in {model_dir}.")
+
     models = []
     model_metadata = []
-    for i in range(1, 6):
+    for i in range(1, max(indices) + 1):
         model_path = model_dir / f"model_{i}.joblib"
         metadata_path = model_dir / f"metadata_{i}.json"
         if not model_path.exists() or not metadata_path.exists():
@@ -170,16 +182,25 @@ def prepare_input(
     temp_col: str | None,
     mole_fraction_col: str | None,
     default_temp: float = DEFAULT_TEMPERATURE_K,
+    progress_callback=None,
 ) -> pd.DataFrame:
     """Standardize SMILES and normalize the Temperature/Mole_fraction columns in place.
 
     ``mole_fraction_col`` should be ``None`` for pure-IL model specs (no mixture composition).
+    ``progress_callback``, if given, is called with a one-line status string as this runs --
+    used by the CLI and Streamlit app to show what's happening instead of a blank wait.
     """
+
+    def _report(message: str) -> None:
+        if progress_callback:
+            progress_callback(message)
+
     data = data.copy()
 
     if smiles_col not in data.columns:
         raise ValueError(f"SMILES column '{smiles_col}' not found in input data. Available columns: {list(data.columns)}")
 
+    _report(f"Standardizing {len(data)} SMILES...")
     standardized_smiles = []
     changes = []
     for smi in data[smiles_col]:
@@ -189,6 +210,12 @@ def prepare_input(
     data["Standardized_IL_SMILES"] = standardized_smiles
     data["Changes"] = changes
     data = reorder_charged_species(data, smiles_col="Standardized_IL_SMILES")
+    invalid_count = sum(1 for c in changes if c == "Invalid SMILES")
+    _report(
+        f"Standardization complete"
+        + (f" ({invalid_count} of {len(data)} SMILES could not be parsed)" if invalid_count else "")
+        + "."
+    )
 
     if mole_fraction_col is not None:
         if mole_fraction_col not in data.columns:
@@ -214,18 +241,28 @@ def predict(
     smiles_col: str = "Standardized_IL_SMILES",
     temp_col: str = "Temperature",
     mole_fraction_col: str | None = "Mole_fraction",
+    progress_callback=None,
 ) -> pd.DataFrame:
     """Run the 5-model ensemble over already-prepared ``data`` and append prediction columns.
 
     ``mole_fraction_col=None`` skips the mole-fraction feature (pure-IL models). If an
     individual ensemble member fails, its predictions are recorded as NaN so the remaining
-    models can still contribute to the consensus.
+    models can still contribute to the consensus. ``progress_callback``, if given, is called
+    with a one-line status string per ensemble member (descriptor calculation, then
+    inference) -- this is the slowest part of a prediction run, so it's worth reporting.
     """
+
+    def _report(message: str) -> None:
+        if progress_callback:
+            progress_callback(message)
+
     data = data.copy()
     all_smiles_list = data[smiles_col].tolist()
     predictions = []
+    n_models = len(ensemble.models)
 
     for i, (model, metadata) in enumerate(zip(ensemble.models, ensemble.metadata), 1):
+        _report(f"Model {i}/{n_models}: calculating Mordred descriptors for {len(all_smiles_list)} row(s)...")
         try:
             required_descriptors_model = metadata["descriptors"]
             descriptor_array = process_il_smiles_list(all_smiles_list, required_descriptors_model)
@@ -236,16 +273,20 @@ def predict(
             descriptor_array = np.hstack(feature_arrays)
         except Exception as e:
             print(f"Error calculating descriptors for Model {i}: {e}")
+            _report(f"Model {i}/{n_models}: descriptor calculation failed ({e}) -- recorded as NaN.")
             predictions.append(pd.Series([np.nan] * len(all_smiles_list)))
             continue
 
+        _report(f"Model {i}/{n_models}: predicting...")
         try:
             preds = model.predict(descriptor_array)
             predictions.append(pd.Series(preds))
         except Exception as e:
             print(f"Error processing Model {i}: {e}")
+            _report(f"Model {i}/{n_models}: prediction failed ({e}) -- recorded as NaN.")
             predictions.append(pd.Series([np.nan] * len(all_smiles_list)))
 
+    _report("Combining ensemble predictions into mean/std...")
     data["prediction_mean"] = pd.concat(predictions, axis=1).mean(axis=1).round(4)
     data["prediction_std"] = pd.concat(predictions, axis=1).std(axis=1).round(4)
     return data
@@ -258,12 +299,22 @@ def run_prediction(
     smiles_col: str | None = None,
     temp_col: str | None = None,
     mole_fraction_col: str | None = None,
+    progress_callback=None,
 ) -> pd.DataFrame:
     """Single in-process entry point used by the CLI, the Streamlit app, and tests.
 
     Any column argument left as ``None`` falls back to ``spec``'s defaults. Pass an
     already-loaded ``ensemble`` (e.g. from a cache) to avoid reloading the joblib files.
+    ``progress_callback``, if given, is called with a one-line status string at each stage
+    (standardization, ensemble loading, per-model descriptor calculation and inference) --
+    used by the CLI and Streamlit app to show what's happening during a run instead of a
+    blank wait, especially for larger inputs where descriptor calculation dominates runtime.
     """
+
+    def _report(message: str) -> None:
+        if progress_callback:
+            progress_callback(message)
+
     smiles_col = smiles_col or spec.default_smiles_col
     temp_col = temp_col or spec.default_temp_col
     if spec.is_pure:
@@ -277,11 +328,13 @@ def run_prediction(
         temp_col=temp_col,
         mole_fraction_col=mole_fraction_col,
         default_temp=DEFAULT_TEMPERATURE_K,
+        progress_callback=progress_callback,
     )
 
     resolved_mole_fraction_col = "Mole_fraction" if mole_fraction_col is not None else None
 
     if ensemble is None:
+        _report(f"Loading trained ensemble from {spec.model_dir}...")
         ensemble = load_models_and_metadata(spec.model_dir)
 
     return predict(
@@ -290,4 +343,5 @@ def run_prediction(
         smiles_col="Standardized_IL_SMILES",
         temp_col="Temperature",
         mole_fraction_col=resolved_mole_fraction_col,
+        progress_callback=progress_callback,
     )

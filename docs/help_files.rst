@@ -12,14 +12,20 @@ or, once the package is installed (``pip install -e .``)::
 
 which prints::
 
-   usage: qspr-il-predict [-h] [--model {1,2,3,4,5,6,7,8}] [--input_csv INPUT_CSV]
-                           [--smiles_col SMILES_COL] [--mole_fraction_col MOLE_FRACTION_COL]
-                           [--temp_col TEMP_COL] [--model_dir MODEL_DIR] [--output_csv OUTPUT_CSV]
+   usage: qspr-il-predict [-h] [--action {model,data,both}]
+                           [--model {1,2,3,4,5,6,7,8}] [--input_csv INPUT_CSV]
+                           [--smiles_col SMILES_COL]
+                           [--mole_fraction_col MOLE_FRACTION_COL] [--temp_col TEMP_COL]
+                           [--model_dir MODEL_DIR] [--output_csv OUTPUT_CSV]
 
    Predict density or refractive index of ionic liquids.
 
    options:
      -h, --help            show this help message and exit
+     --action {model,data,both}
+                            What to do: run a prediction model, fetch & clean
+                            ILThermo data, or both. Defaults to 'model' if --model
+                            is given, otherwise you are prompted interactively.
      --model {1,2,3,4,5,6,7,8}
                             Model to run (1-8).
      --input_csv INPUT_CSV
@@ -33,6 +39,11 @@ which prints::
                             Directory containing the ensemble of models and metadata.
      --output_csv OUTPUT_CSV
                             Path to save the output CSV with predictions.
+
+If ``--action`` is omitted and no ``--model`` is given either, you are asked
+interactively whether to run a prediction model, fetch & clean data (for any
+ILThermo property -- see :doc:`data_pipeline`), or both. Passing ``--model``
+(as in the example below) skips that prompt and goes straight to prediction.
 
 Model numbers
 -------------

@@ -117,3 +117,38 @@ configurable version of that fetch-and-clean process is now implemented in
 :mod:`qspr_il.data.ionics` and :mod:`qspr_il.data.cleaning` -- see
 :doc:`data_pipeline` for how to (re)generate a dataset shaped like the ones
 summarized above, and for known limitations of the underlying data source.
+
+The static training-set schema and the pipeline's generic curated-output
+schema line up directly (``Property``/``Property_value`` replaces the
+static files' fixed ``Density (kg/m3)`` / ``Refractive index (Na D-line)``
+column, since :func:`~qspr_il.data.cleaning.fetch_curated_dataset` isn't
+limited to those two properties):
+
+.. mermaid::
+
+   classDiagram
+       class TrainingSetCSV {
+           &lt;&lt;datasets/training_sets/*.csv&gt;&gt;
+           setid
+           Standardized_IL_SMILES
+           Temperature (K)
+           Pressure (kPa)
+           Mole fraction
+           Density (kg/m3) or Refractive index (Na D-line)
+           Record_ID
+           Data_quality_flag
+       }
+       class CuratedOutput {
+           &lt;&lt;qspr_il.data.cleaning.fetch_curated_dataset()&gt;&gt;
+           setid
+           Standardized_IL_SMILES
+           Temperature (K)
+           Pressure (kPa)
+           Mole fraction
+           Mole_fraction_IL
+           Property
+           Property_value
+           Record_ID
+           Data_quality_flag
+       }
+       TrainingSetCSV <|-- CuratedOutput : same shape, generic property columns

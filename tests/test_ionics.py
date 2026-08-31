@@ -24,6 +24,12 @@ def test_getdata_downloads_each_set_under_data_root(tmp_path, mock_ilthermo_resp
     assert str(tmp_path) in str(idset_dir)
 
 
+def test_download_idsets_reports_progress(tmp_path, mock_ilthermo_responses):
+    calls = []
+    client.download_idsets(["a", "b"], output_dir=tmp_path, progress_callback=lambda i, total, setid: calls.append((i, total, setid)))
+    assert calls == [(1, 2, "a"), (2, 2, "b")]
+
+
 def test_flatten_idset_strips_sub_tags_and_builds_component_columns():
     jdata = {
         "dhead": [["Temperature", "K"], ["Density", "kg/m3"]],

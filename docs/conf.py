@@ -11,6 +11,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
+    "sphinxcontrib.mermaid",
 ]
 autodoc_member_order = "bysource"
 autodoc_mock_imports = ["mordred", "rdkit", "xgboost", "streamlit"]

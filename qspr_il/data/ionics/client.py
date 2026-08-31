@@ -152,17 +152,24 @@ def getData(
     return download_idsets(idsets, idset_dir)
 
 
-def download_idsets(setids: list[str], output_dir: str | Path) -> Path:
+def download_idsets(setids: list[str], output_dir: str | Path, progress_callback=None) -> Path:
     """Download each ILThermo dataset id in ``setids`` and save it as one JSON file per set.
 
     Extracted out of :func:`getData` so callers (e.g. :mod:`qspr_il.data.cleaning`) can
     filter a broad search's results (by exact property name, since the ``prp`` id lookup
     used by :func:`getIdsets` can go stale against the live ILThermo API) before downloading,
     rather than always fetching every idset a search returns.
+
+    ``progress_callback``, if given, is called as ``progress_callback(index, total, setid)``
+    before each download (``index`` is 1-based) -- used by :mod:`qspr_il.data.cleaning` and
+    the Streamlit app to show live download progress.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    for setid in tqdm(setids, desc="Downloading idsets"):
+    total = len(setids)
+    for i, setid in enumerate(tqdm(setids, desc="Downloading idsets"), start=1):
+        if progress_callback:
+            progress_callback(i, total, setid)
         url = f"https://ilthermo.boulder.nist.gov/ILT2/ilset?set={setid}"
         resp = requests.get(url)
         resp.raise_for_status()

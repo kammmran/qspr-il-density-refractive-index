@@ -40,11 +40,29 @@ def test_load_models_and_metadata_happy_path(fake_ensemble_dir):
     assert ensemble.metadata[0]["descriptors"] == ["nAtom", "nHeavyAtom"]
 
 
-@pytest.mark.parametrize("missing_index", [1, 3, 5])
-def test_load_models_and_metadata_missing_file_raises(fake_ensemble_dir, missing_index):
+@pytest.mark.parametrize("missing_index", [1, 3])
+def test_load_models_and_metadata_gap_in_numbering_raises(fake_ensemble_dir, missing_index):
+    # A gap (a later-numbered model still present after a missing one) is always corruption --
+    # unlike deleting the highest-numbered file, which just means a smaller valid ensemble.
     (fake_ensemble_dir / f"model_{missing_index}.joblib").unlink()
     with pytest.raises(FileNotFoundError):
         load_models_and_metadata(fake_ensemble_dir)
+
+
+def test_load_models_and_metadata_no_models_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        load_models_and_metadata(tmp_path)
+
+
+def test_load_models_and_metadata_supports_fewer_than_five(fake_ensemble_dir):
+    # A freshly trained ensemble (qspr_il.models.training) may have fewer than 5 members if
+    # there weren't enough unique compounds for a full 5-fold split -- a contiguous run
+    # starting at 1, however short, is a valid ensemble.
+    (fake_ensemble_dir / "model_5.joblib").unlink()
+    (fake_ensemble_dir / "metadata_5.json").unlink()
+    ensemble = load_models_and_metadata(fake_ensemble_dir)
+    assert len(ensemble.models) == 4
+    assert len(ensemble.metadata) == 4
 
 
 def test_calculate_descriptors_shape_matches_required():
@@ -143,3 +161,41 @@ def test_run_prediction_pure_spec_excludes_mole_fraction(fake_ensemble_dir, samp
     result = run_prediction(sample_pure_prediction_df, spec, ensemble=ensemble, smiles_col="SMILES")
     assert "prediction_mean" in result.columns
     assert len(result) == len(sample_pure_prediction_df)
+
+
+def test_run_prediction_reports_progress(fake_ensemble_dir, sample_pure_prediction_df):
+    spec = get_spec("8")
+    ensemble = load_models_and_metadata(fake_ensemble_dir)
+    messages = []
+    run_prediction(
+        sample_pure_prediction_df, spec, ensemble=ensemble, smiles_col="SMILES", progress_callback=messages.append
+    )
+    assert any("Standardizing" in m for m in messages)
+    assert any("Model 1/5" in m for m in messages)
+    assert any("Model 5/5" in m for m in messages)
+    assert any("Combining ensemble predictions" in m for m in messages)
+
+
+def test_run_prediction_reports_ensemble_loading_when_not_cached(fake_ensemble_dir, sample_pure_prediction_df):
+    spec = get_spec("8")
+    messages = []
+    run_prediction(
+        sample_pure_prediction_df,
+        spec,
+        ensemble=load_models_and_metadata(fake_ensemble_dir),  # avoid touching the real model_dir
+        smiles_col="SMILES",
+        progress_callback=messages.append,
+    )
+    # ensemble already provided -> no "Loading trained ensemble" message expected
+    assert not any("Loading trained ensemble" in m for m in messages)
+
+
+def test_predict_reports_progress_on_model_failure(fake_ensemble_dir, sample_prediction_df):
+    ensemble = load_models_and_metadata(fake_ensemble_dir)
+    ensemble.models[2].predict = lambda X: (_ for _ in ()).throw(RuntimeError("boom"))
+    prepared = prepare_input(
+        sample_prediction_df, smiles_col="SMILES", temp_col="Temperature", mole_fraction_col="Mole_fraction"
+    )
+    messages = []
+    predict(prepared, ensemble, mole_fraction_col="Mole_fraction", progress_callback=messages.append)
+    assert any("Model 3/5: prediction failed" in m for m in messages)

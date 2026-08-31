@@ -28,12 +28,16 @@ Authors
 Quick start
 -----------
 
-Create a virtual environment and install the project dependencies::
+Create a virtual environment and install the project (verified against a
+clean environment)::
 
    python3 -m venv .venv
    source .venv/bin/activate
    python -m pip install --upgrade pip
-   python -m pip install -r requirements.txt
+   python -m pip install -e ".[gui,dev,docs]"
+
+Drop extras you don't need -- e.g. ``pip install -e .`` alone for just the
+core prediction pipeline and data fetch/clean tools.
 
 Start the interactive launcher from the project root::
 
@@ -145,7 +149,10 @@ The project requires Python 3.11 or newer. From the repository root::
     python3 -m venv .venv
     source .venv/bin/activate
     python -m pip install --upgrade pip
-    python -m pip install -r requirements.txt
+    python -m pip install -e ".[gui,dev,docs]"
+
+See "Quick start" above for what each extra provides (``gui`` for the
+Streamlit app, ``dev`` for tests, ``docs`` for building this documentation).
 
 Usage
 -----
@@ -180,7 +187,9 @@ Documentation contents
 
 * :doc:`engine` - the prediction engine, model registry, and CLI
 * :doc:`data_pipeline` - fetching and cleaning ILThermo data
+* :doc:`training` - training a new model for a property with none yet
 * :doc:`data` - dataset sizes, ranges, and missing-value statistics
+* :doc:`results` - interactive UMAP visualizations and generated predictions
 * :doc:`help_files` - command-line options reference
 * :doc:`streamlit_app` - the GUI and Hugging Face Spaces deployment
 
@@ -190,6 +199,8 @@ Documentation contents
 
   engine
   data_pipeline
+  training
   data
+  results
   help_files
   streamlit_app
