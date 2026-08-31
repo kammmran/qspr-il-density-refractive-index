@@ -1,4 +1,4 @@
-# QSPR Modeling of Density and Refractive Index for IL–Solvent Mixtures
+# QSPR Modeling of Ionic Liquid properties
 
 ![Predictors of Density and Refractive Index in IL–Solvent Mixtures](figures/il_github.png)
 

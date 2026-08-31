@@ -1,4 +1,4 @@
-QSPR Modeling of Density and Refractive Index
+QSPR Modeling of Ionic Liquid properties
 ==============================================
 
 .. image:: ../figures/il_github.png

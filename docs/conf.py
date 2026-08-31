@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(".."))
 
-project = "QSPR Modeling of Density and Refractive Index"
+project = "QSPR Modeling of Ionic Liquid properties"
 author = "Shamkhal Baybekov, Kamran Heydarov"
 copyright = ""
 
