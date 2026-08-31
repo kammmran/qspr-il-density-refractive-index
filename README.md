@@ -17,7 +17,6 @@ Ionic liquids (ILs) are tunable organic salts with negligible vapor pressure, hi
 
 - `qspr_il/` – The installable package: the prediction engine and model registry (`qspr_il/models/`, `qspr_il/registry.py`), the ILThermo data fetch/cleaning pipeline (`qspr_il/data/`), the CLI (`qspr_il/cli.py`), and the Streamlit app (`qspr_il/app.py`)
 - `datasets/` – Curated training sets and an external test set
-- `streamlit_app/` – Entry-point folder for deploying the Streamlit app to Streamlit Community Cloud
 - `figures/` - Contains the README figure
 - `results/` - Contains generated prediction files and interactive UMAP visualizations (`results/interactive_umap/`) comparing the training data to the external test set for each model
 - `tests/` - Pytest suite
@@ -203,7 +202,7 @@ python -m pip install -e ".[gui]"
 streamlit run qspr_il/app.py
 ```
 
-It supports the same 8 models, either via CSV upload or a single-SMILES entry form. See `docs/streamlit_app.rst` for how this is packaged for deployment to Streamlit Community Cloud.
+It supports the same 8 models, either via CSV upload or a single-SMILES entry form. The same command is the main module for the Streamlit Community Cloud deployment. See `docs/streamlit_app.rst` for details.
 
 ### Interactive UMAP Visualizations
 

@@ -28,10 +28,16 @@ Every prediction result includes, right below the results table:
   **"Training data vs. external test set (UMAP)"** expander showing the
   matching pre-generated visualization from :doc:`results`.
 
-Running locally
-----------------
+Running the app
+---------------
 
 Install the ``gui`` extra and start the app::
 
    python -m pip install -e ".[gui]"
    streamlit run qspr_il/app.py
+
+``qspr_il/app.py`` adds the repository root to ``sys.path`` on startup, so the
+same command works as the main module on Streamlit Community Cloud -- point the
+app at this repository and set the main module path to ``qspr_il/app.py``.
+Streamlit Cloud clones the whole repository, so ``qspr_il`` and its bundled
+trained model artifacts are used directly from the checkout.

@@ -1,16 +1,24 @@
 """Streamlit GUI for the QSPR density/refractive-index prediction models.
 
-Run locally with::
+Run locally or on Streamlit Community Cloud with::
 
     streamlit run qspr_il/app.py
 
-For Streamlit Community Cloud deployment, see ``streamlit_app/`` at the repo
-root and :doc:`/streamlit_app` in the Sphinx docs.
+See :doc:`/streamlit_app` in the Sphinx docs.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# When Streamlit runs this file as a script (``streamlit run qspr_il/app.py``),
+# only this file's directory -- not the repo root -- is placed on ``sys.path``,
+# so ``import qspr_il`` would fail. Add the repo root before importing anything
+# from the package.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import numpy as np
 import pandas as pd

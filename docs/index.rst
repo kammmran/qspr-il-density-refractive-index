@@ -61,8 +61,6 @@ Repository structure
   registry (:doc:`engine`), the data fetch/cleaning pipeline (:doc:`data_pipeline`),
   the CLI, and the Streamlit app (:doc:`streamlit_app`).
 * ``datasets/`` contains curated training sets and the external test set.
-* ``streamlit_app/`` is the entry-point folder for deploying the Streamlit
-  app to Streamlit Community Cloud.
 * ``figures/`` contains project figures.
 * ``results/`` contains generated prediction files and analysis artifacts.
 * ``tests/`` contains the pytest suite.
