@@ -1,9 +1,9 @@
 Streamlit App
 =============
 
-:mod:`ilqspr.app` is a Streamlit GUI over the same prediction engine and data
-pipeline used by the CLI (:mod:`ilqspr.models.engine`,
-:mod:`ilqspr.data.cleaning`). A sidebar selector offers three modes:
+:mod:`qspr_il.app` is a Streamlit GUI over the same prediction engine and data
+pipeline used by the CLI (:mod:`qspr_il.models.engine`,
+:mod:`qspr_il.data.cleaning`). A sidebar selector offers three modes:
 
 * **Run prediction model** -- upload a CSV or enter a single ionic-liquid
   SMILES, and get density/refractive-index predictions (the original app
@@ -34,7 +34,7 @@ Running locally
 Install the ``gui`` extra and start the app::
 
    python -m pip install -e ".[gui]"
-   streamlit run ilqspr/app.py
+   streamlit run qspr_il/app.py
 
 Deploying to Hugging Face Spaces
 ----------------------------------
@@ -47,8 +47,8 @@ the repository root:
 
    huggingface_space/
      README.md          # Spaces config frontmatter (sdk: streamlit, app_file: app.py, ...)
-     app.py              # thin shim: from ilqspr.app import main; main()
-     requirements.txt    # streamlit + ilqspr installed from this GitHub repo
+     app.py              # thin shim: from qspr_il.app import main; main()
+     requirements.txt    # streamlit + qspr_il installed from this GitHub repo
 
 A separate folder is used (rather than syncing the whole repository as a
 Space) because Hugging Face Spaces reads its configuration from a
@@ -65,7 +65,7 @@ To deploy:
       cd hf-space
       git add . && git commit -m "Deploy QSPR Streamlit app" && git push
 
-The Space's ``requirements.txt`` installs ``ilqspr`` directly from this
+The Space's ``requirements.txt`` installs ``qspr_il`` directly from this
 GitHub repository (including its bundled trained model artifacts, shipped as
 package data), so the trained models are never duplicated into the Space
 export itself.

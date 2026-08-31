@@ -1,6 +1,6 @@
 import json
 
-from ilqspr.data.ionics import client
+from qspr_il.data.ionics import client
 
 
 def test_getidsets_builds_expected_url_and_saves_under_data_root(tmp_path, mock_ilthermo_responses):

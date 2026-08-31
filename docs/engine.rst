@@ -2,8 +2,8 @@ Prediction Engine
 ==================
 
 All 8 prediction models (2 properties x 4 solvent systems) share a single
-implementation: :mod:`ilqspr.models.engine`, parametrized by a
-:class:`~ilqspr.registry.ModelSpec` from :mod:`ilqspr.registry`. This
+implementation: :mod:`qspr_il.models.engine`, parametrized by a
+:class:`~qspr_il.registry.ModelSpec` from :mod:`qspr_il.registry`. This
 replaces what used to be 8 near-identical, independently-maintained scripts.
 
 .. mermaid::
@@ -15,14 +15,14 @@ replaces what used to be 8 near-identical, independently-maintained scripts.
            C["Mole fraction (mixture models only)"]
        end
 
-       subgraph "ilqspr.models.engine"
+       subgraph "qspr_il.models.engine"
            D["standardize_molecule()"]
            E["reorder_charged_species()"]
            F["calculate_descriptors() - Mordred"]
            G["predict() - 5-model ensemble"]
        end
 
-       subgraph "ilqspr/models/&lt;name&gt;/*_ensemble_model/"
+       subgraph "qspr_il/models/&lt;name&gt;/*_ensemble_model/"
            H["model_1..5.joblib"]
            I["metadata_1..5.json"]
        end
@@ -57,9 +57,9 @@ mapped to one trained ensemble directory:
 
        DENS --> PURE & WATER & ETOH & IPA
        RI --> PURE & WATER & ETOH & IPA
-       PURE & WATER & ETOH & IPA --> REG["ilqspr.registry.REGISTRY - 8 ModelSpecs"]
+       PURE & WATER & ETOH & IPA --> REG["qspr_il.registry.REGISTRY - 8 ModelSpecs"]
 
-.. automodule:: ilqspr.registry
+.. automodule:: qspr_il.registry
    :members:
    :undoc-members:
    :show-inheritance:
@@ -82,18 +82,18 @@ SMILES before descriptor calculation:
        Reorder --> Out["Standardized_IL_SMILES + Changes summary"]
 
 ``load_models_and_metadata()`` reads one ensemble directory into a
-:class:`~ilqspr.models.engine.LoadedEnsemble`:
+:class:`~qspr_il.models.engine.LoadedEnsemble`:
 
 .. mermaid::
 
    classDiagram
        class ModelDirectory {
-           &lt;&lt;ilqspr/models/&lt;name&gt;/*_ensemble_model/&gt;&gt;
+           &lt;&lt;qspr_il/models/&lt;name&gt;/*_ensemble_model/&gt;&gt;
            model_1.joblib .. model_5.joblib
            metadata_1.json .. metadata_5.json
        }
        class LoadedEnsemble {
-           &lt;&lt;ilqspr.models.engine&gt;&gt;
+           &lt;&lt;qspr_il.models.engine&gt;&gt;
            models: list~XGBRegressor~
            metadata: list~dict~
        }
@@ -104,7 +104,7 @@ SMILES before descriptor calculation:
        ModelDirectory --> LoadedEnsemble : load_models_and_metadata()
        LoadedEnsemble --> ModelMetadata
 
-.. automodule:: ilqspr.models.engine
+.. automodule:: qspr_il.models.engine
    :members:
    :undoc-members:
    :show-inheritance:
@@ -112,7 +112,7 @@ SMILES before descriptor calculation:
 Command-line interface
 -----------------------
 
-.. automodule:: ilqspr.cli
+.. automodule:: qspr_il.cli
    :members:
    :undoc-members:
    :show-inheritance:
@@ -130,8 +130,8 @@ script::
    qspr-il-predict --model 5 --input_csv datasets/external_test_set.csv \
        --smiles_col IL_SMILES --mole_fraction_col Mole_fraction_IL
 
-Both are equivalent thin wrappers around :func:`ilqspr.cli.main`, which in
-turn calls :func:`ilqspr.models.engine.run_prediction` in-process -- there is
+Both are equivalent thin wrappers around :func:`qspr_il.cli.main`, which in
+turn calls :func:`qspr_il.models.engine.run_prediction` in-process -- there is
 no subprocess dispatch and no ``sys.path`` manipulation involved.
 
 Running with no flags at all asks what to do first::

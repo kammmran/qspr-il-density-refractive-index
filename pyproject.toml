@@ -30,13 +30,13 @@ dev = ["pytest>=8.0"]
 docs = ["sphinx>=7.0", "furo", "sphinxcontrib-mermaid>=1.0"]
 
 [project.scripts]
-qspr-il-predict = "ilqspr.cli:main"
+qspr-il-predict = "qspr_il.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["ilqspr*"]
+include = ["qspr_il*"]
 
 [tool.setuptools.package-data]
-ilqspr = [
+qspr_il = [
     "models/*/*/*.joblib",
     "models/*/*/*.json",
     "data/ionics/keydata/*.csv",

@@ -114,14 +114,14 @@ Provenance
 
 These CSVs were curated from the ILThermo database. A reproducible,
 configurable version of that fetch-and-clean process is now implemented in
-:mod:`ilqspr.data.ionics` and :mod:`ilqspr.data.cleaning` -- see
+:mod:`qspr_il.data.ionics` and :mod:`qspr_il.data.cleaning` -- see
 :doc:`data_pipeline` for how to (re)generate a dataset shaped like the ones
 summarized above, and for known limitations of the underlying data source.
 
 The static training-set schema and the pipeline's generic curated-output
 schema line up directly (``Property``/``Property_value`` replaces the
 static files' fixed ``Density (kg/m3)`` / ``Refractive index (Na D-line)``
-column, since :func:`~ilqspr.data.cleaning.fetch_curated_dataset` isn't
+column, since :func:`~qspr_il.data.cleaning.fetch_curated_dataset` isn't
 limited to those two properties):
 
 .. mermaid::
@@ -139,7 +139,7 @@ limited to those two properties):
            Data_quality_flag
        }
        class CuratedOutput {
-           &lt;&lt;ilqspr.data.cleaning.fetch_curated_dataset()&gt;&gt;
+           &lt;&lt;qspr_il.data.cleaning.fetch_curated_dataset()&gt;&gt;
            setid
            Standardized_IL_SMILES
            Temperature (K)

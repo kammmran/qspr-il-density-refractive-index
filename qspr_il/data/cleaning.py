@@ -1,7 +1,7 @@
 """Fetch + clean pipeline: turns raw ILThermo data into curated, training-ready CSVs.
 
 Nothing in this repo previously implemented the "duplicate removal, consistency
-checks, and standardization" the README describes — :mod:`ilqspr.data.ionics`
+checks, and standardization" the README describes — :mod:`qspr_il.data.ionics`
 only fetches and flattens raw data. This module is that missing piece. It does
 **not** do any model training/fitting — its output is a curated CSV for a human
 to use however they choose (including, but not limited to, retraining models
@@ -9,7 +9,7 @@ outside this pipeline's scope).
 
 This module is **not** limited to density and refractive index (the two
 properties this project has trained models for). Any of the ~56 properties
-ILThermo tracks (see ``ilqspr/data/ionics/keydata/property_idsets.csv``, or
+ILThermo tracks (see ``qspr_il/data/ionics/keydata/property_idsets.csv``, or
 call :func:`list_available_properties`) can be fetched and cleaned, over any
 temperature/pressure range -- the curated output uses a generic
 ``Property``/``Property_value`` column pair rather than a property-specific
@@ -21,7 +21,7 @@ responses (not just the existing curated CSVs) since no raw sample was
 committed to the repo. In particular:
 
 * The bundled ``keydata/property_idsets.csv`` "prp" ids used by
-  :func:`ilqspr.data.ionics.client.getIdsets` were found to return zero
+  :func:`qspr_il.data.ionics.client.getIdsets` were found to return zero
   results against the *current* live API (verified empirically) -- ILThermo's
   internal ids appear to have drifted since that lookup table was built. This
   module works around that by searching broadly (unfiltered by ``prp``) and
@@ -32,7 +32,7 @@ committed to the repo. In particular:
   ``property_idsets.csv`` (e.g. ``"refractive-index"``).
 * The bundled ``keydata/smiles.csv`` compound-id lookup table is similarly a
   point-in-time snapshot and may not cover every compound id ILThermo returns
-  today; :func:`ilqspr.data.ionics.client.addSmiles` silently falls back to
+  today; :func:`qspr_il.data.ionics.client.addSmiles` silently falls back to
   the raw molecular formula string when a compound id isn't found. Live
   spot-checks found this table's IL-compound coverage is sparse to
   nonexistent -- it appears to mostly cover common small molecules/solvents
@@ -65,8 +65,8 @@ import pandas as pd
 import requests
 from rdkit.Chem import Descriptors, MolFromSmiles, rdMolDescriptors
 
-from ilqspr.data.ionics import client as ionics_client
-from ilqspr.models.engine import reorder_charged_species, standardize_molecule
+from qspr_il.data.ionics import client as ionics_client
+from qspr_il.models.engine import reorder_charged_species, standardize_molecule
 
 PUBCHEM_SMILES_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{name}/property/IsomericSMILES/TXT"
 
@@ -336,7 +336,7 @@ def filter_property_range(df: pd.DataFrame, value_col: str, plausible_range: tup
 def _parse_numeric(value) -> float:
     """Parse a raw ILThermo cell value as a float.
 
-    :func:`ilqspr.data.ionics.client.flatten_idset` joins a ``[value, uncertainty]`` cell
+    :func:`qspr_il.data.ionics.client.flatten_idset` joins a ``[value, uncertainty]`` cell
     into a single ``"value;uncertainty"`` string (e.g. ``"914.7;1.8"``); this takes just the
     primary value. Returns NaN for anything that isn't parseable rather than raising, since a
     single malformed measurement shouldn't abort building the whole dataset.

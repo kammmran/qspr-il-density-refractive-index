@@ -1,6 +1,6 @@
 import pytest
 
-from ilqspr.registry import REGISTRY, find, get, iter_specs
+from qspr_il.registry import REGISTRY, find, get, iter_specs
 
 
 def test_all_eight_keys_present():

@@ -1,7 +1,7 @@
 Command-Line Reference
 =======================
 
-The single CLI entry point, :func:`ilqspr.cli.main`, replaces what used to
+The single CLI entry point, :func:`qspr_il.cli.main`, replaces what used to
 be 8 separate scripts each with their own ``--help`` text. Run either::
 
    python qspr.py --help

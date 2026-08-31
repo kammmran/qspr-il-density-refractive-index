@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from ilqspr.models.engine import load_models_and_metadata, predict, prepare_input
-from ilqspr.models.training import DEFAULT_HYPERPARAMETERS, select_usable_descriptors, train_ensemble
+from qspr_il.models.engine import load_models_and_metadata, predict, prepare_input
+from qspr_il.models.training import DEFAULT_HYPERPARAMETERS, select_usable_descriptors, train_ensemble
 
 # A handful of real, distinct, valid IL SMILES so Mordred descriptor calculation succeeds and
 # GroupKFold has enough unique groups to split on.

@@ -3,7 +3,7 @@
 Replaces the 8 near-duplicate ``apply_*.py`` scripts that used to live under
 ``models/<name>/``. All of them shared the same standardization, descriptor
 calculation, and ensemble-prediction logic; this module keeps that logic in
-one place, parametrized by a :class:`~ilqspr.registry.ModelSpec`.
+one place, parametrized by a :class:`~qspr_il.registry.ModelSpec`.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
 if TYPE_CHECKING:
-    from ilqspr.registry import ModelSpec
+    from qspr_il.registry import ModelSpec
 
 DEFAULT_TEMPERATURE_K = 298.15
 
@@ -114,7 +114,7 @@ def load_models_and_metadata(model_dir: str | Path) -> LoadedEnsemble:
     a contiguous run starting at 1) from a directory.
 
     Ensembles shipped with this project always have exactly 5; a freshly trained one (see
-    :mod:`ilqspr.models.training`) may have fewer if there weren't enough unique compounds for
+    :mod:`qspr_il.models.training`) may have fewer if there weren't enough unique compounds for
     a full 5-fold split. Raises :class:`FileNotFoundError` if there's no ``model_1.joblib`` at
     all, or if the numbering has a gap (e.g. ``model_1`` and ``model_3`` exist but ``model_2``
     doesn't) -- a valid ensemble is always a contiguous run from 1, never a sparse one.

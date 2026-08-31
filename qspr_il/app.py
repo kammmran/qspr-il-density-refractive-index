@@ -2,7 +2,7 @@
 
 Run locally with::
 
-    streamlit run ilqspr/app.py
+    streamlit run qspr_il/app.py
 
 For Hugging Face Spaces deployment, see ``huggingface_space/`` at the repo
 root and :doc:`/streamlit_app` in the Sphinx docs.
@@ -16,9 +16,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ilqspr.models.engine import load_models_and_metadata, run_prediction
-from ilqspr.registry import ModelSpec, iter_specs
-from ilqspr.registry import find as find_spec
+from qspr_il.models.engine import load_models_and_metadata, run_prediction
+from qspr_il.registry import ModelSpec, iter_specs
+from qspr_il.registry import find as find_spec
 
 _BANNER_IMAGE = Path(__file__).resolve().parent / "assets" / "il_github.png"
 _UMAP_DIR = Path(__file__).resolve().parent.parent / \
@@ -301,7 +301,7 @@ def _render_umap_expander(spec: ModelSpec) -> None:
 
 def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: str | None) -> None:
     """No trained model exists for this property -- offer to train a new one on the data just
-    fetched (group k-fold XGBoost ensemble, see ilqspr.models.training), then optionally run
+    fetched (group k-fold XGBoost ensemble, see qspr_il.models.training), then optionally run
     it immediately on the same data.
     """
     st.info(
@@ -317,7 +317,7 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
         output_dir = st.text_input("Save trained model to", value=default_dir)
 
     if st.button("Train a new model on this data", type="primary"):
-        from ilqspr.models.training import train_ensemble
+        from qspr_il.models.training import train_ensemble
 
         mole_fraction_col = None if solvent_name is None else "Mole_fraction_IL"
         status = st.status(
@@ -387,7 +387,7 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
 def _run_data_mode(also_run_model: bool) -> None:
     """UI for fetching + cleaning ILThermo data for any property, optionally chaining into
     the matching trained prediction model (for "Both" mode) when one exists."""
-    from ilqspr.data.cleaning import fetch_curated_dataset, list_available_properties
+    from qspr_il.data.cleaning import fetch_curated_dataset, list_available_properties
 
     st.subheader("Fetch & clean ILThermo data")
     st.caption(

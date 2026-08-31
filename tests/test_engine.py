@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ilqspr.models.engine import (
+from qspr_il.models.engine import (
     calculate_descriptors,
     load_models_and_metadata,
     predict,
@@ -12,7 +12,7 @@ from ilqspr.models.engine import (
     run_prediction,
     standardize_molecule,
 )
-from ilqspr.registry import get as get_spec
+from qspr_il.registry import get as get_spec
 
 
 def test_standardize_molecule_valid_smiles():
@@ -55,7 +55,7 @@ def test_load_models_and_metadata_no_models_raises(tmp_path):
 
 
 def test_load_models_and_metadata_supports_fewer_than_five(fake_ensemble_dir):
-    # A freshly trained ensemble (ilqspr.models.training) may have fewer than 5 members if
+    # A freshly trained ensemble (qspr_il.models.training) may have fewer than 5 members if
     # there weren't enough unique compounds for a full 5-fold split -- a contiguous run
     # starting at 1, however short, is a valid ensemble.
     (fake_ensemble_dir / "model_5.joblib").unlink()
@@ -127,7 +127,7 @@ def test_prepare_input_flags_invalid_smiles_in_changes_column():
 
 
 def test_run_prediction_output_includes_changes_column(fake_ensemble_dir, sample_pure_prediction_df):
-    from ilqspr.registry import get as get_spec
+    from qspr_il.registry import get as get_spec
 
     spec = get_spec("8")
     ensemble = load_models_and_metadata(fake_ensemble_dir)

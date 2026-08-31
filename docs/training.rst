@@ -4,7 +4,7 @@ Training New Models
 The 8 shipped models (density/refractive index x 4 systems) were trained
 using this project's original methodology -- five independently shuffled
 dataset variants, each with its own hyperparameter search (see the README's
-"Datasets and Models" section). :mod:`ilqspr.models.training` is a smaller,
+"Datasets and Models" section). :mod:`qspr_il.models.training` is a smaller,
 *honest* alternative for properties that don't have a shipped model yet: it
 does **not** reimplement that original methodology. It trains a real,
 usable ensemble with the same file shape the rest of the project expects,
@@ -16,11 +16,11 @@ can judge whether to trust it before using it.
 .. mermaid::
 
    graph TD
-       subgraph "Curated data (ilqspr.data.cleaning)"
+       subgraph "Curated data (qspr_il.data.cleaning)"
            DF["Property_value, IL_SMILES, Temperature (K)[, Mole_fraction_IL]"]
        end
 
-       subgraph "ilqspr.models.training"
+       subgraph "qspr_il.models.training"
            DESC["Compute all 2D Mordred descriptors"]
            SELECT["select_usable_descriptors() - drop sparse/constant columns"]
            SPLIT["GroupKFold by IL SMILES"]
@@ -31,7 +31,7 @@ can judge whether to trust it before using it.
        FIT --> OUT["model_1..N.joblib + metadata_1..N.json"]
        FIT --> METRICS["Per-fold RMSE / R2"]
 
-.. automodule:: ilqspr.models.training
+.. automodule:: qspr_il.models.training
    :members:
    :undoc-members:
    :show-inheritance:
@@ -41,8 +41,8 @@ Usage
 
 ::
 
-   from ilqspr.data.cleaning import fetch_curated_dataset
-   from ilqspr.models.training import train_ensemble
+   from qspr_il.data.cleaning import fetch_curated_dataset
+   from qspr_il.models.training import train_ensemble
 
    df = fetch_curated_dataset("viscosity", None)  # no trained model exists for this yet
    ensemble, metrics = train_ensemble(
@@ -61,13 +61,13 @@ pipeline -- ``load_models_and_metadata()`` and ``run_prediction()`` (see
 :doc:`engine`) don't care whether an ensemble came from this module or was
 shipped with the project::
 
-   from ilqspr.models.engine import load_models_and_metadata, run_prediction
+   from qspr_il.models.engine import load_models_and_metadata, run_prediction
 
    ensemble = load_models_and_metadata("results/custom_models/viscosity_pure_ensemble_model")
 
-:func:`~ilqspr.models.engine.load_models_and_metadata` accepts any
+:func:`~qspr_il.models.engine.load_models_and_metadata` accepts any
 contiguous run of ``model_N.joblib`` files starting at 1 -- not just exactly
-5 -- since :func:`~ilqspr.models.training.train_ensemble` trains fewer than
+5 -- since :func:`~qspr_il.models.training.train_ensemble` trains fewer than
 requested when there aren't enough unique compounds for a full k-fold split.
 
 In the CLI and app
@@ -81,7 +81,7 @@ immediately on the same data.
 Known limitations
 ------------------
 
-* Hyperparameters are fixed (:data:`~ilqspr.models.training.DEFAULT_HYPERPARAMETERS`),
+* Hyperparameters are fixed (:data:`~qspr_il.models.training.DEFAULT_HYPERPARAMETERS`),
   not searched -- pass your own via the ``hyperparameters`` argument if the
   defaults perform poorly for a given property.
 * Validation R2 can be legitimately poor or negative for properties with few

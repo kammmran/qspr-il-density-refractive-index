@@ -2,7 +2,7 @@
 
 Replaces the old ``qspr.py`` menu + ``subprocess`` dispatch and the 8 duplicated
 ``apply_*.py`` argparse blocks. Everything runs in-process against
-:mod:`ilqspr.models.engine` and :mod:`ilqspr.data.cleaning`.
+:mod:`qspr_il.models.engine` and :mod:`qspr_il.data.cleaning`.
 """
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from ilqspr.models.engine import load_models_and_metadata, run_prediction
-from ilqspr.registry import ModelSpec, iter_specs
-from ilqspr.registry import find as find_spec
-from ilqspr.registry import get as get_spec
+from qspr_il.models.engine import load_models_and_metadata, run_prediction
+from qspr_il.registry import ModelSpec, iter_specs
+from qspr_il.registry import find as find_spec
+from qspr_il.registry import get as get_spec
 
 DEFAULT_TEMP_RANGE = (253.0, 573.0)
 DEFAULT_PRESSURE_RANGE = (90.0, 110.0)
@@ -182,7 +182,7 @@ def _print_numbered_columns(items: list[str], columns: int = 3) -> None:
 
 
 def _prompt_property() -> str:
-    from ilqspr.data.cleaning import list_available_properties
+    from qspr_il.data.cleaning import list_available_properties
 
     properties = list_available_properties()
     print(f"\n{len(properties)} ILThermo properties are available:")
@@ -237,7 +237,7 @@ def _run_data_action() -> tuple[pd.DataFrame, str | None, str | None, str] | Non
     (``resolved_property_name`` is ``None`` if the fetch returned no rows), or ``None`` if the
     fetch failed outright (e.g. the requested property matched nothing).
     """
-    from ilqspr.data.cleaning import fetch_curated_dataset
+    from qspr_il.data.cleaning import fetch_curated_dataset
 
     settings = _prompt_data_settings()
     print(
@@ -262,7 +262,7 @@ def _run_data_action() -> tuple[pd.DataFrame, str | None, str | None, str] | Non
         print(
             "No usable rows were found for this property/system/condition combination "
             "(this can happen if the bundled SMILES lookup table doesn't cover the "
-            "compounds ILThermo returned -- see ilqspr.data.cleaning module docs)."
+            "compounds ILThermo returned -- see qspr_il.data.cleaning module docs)."
         )
     else:
         output_path = Path(settings["output_csv"])
@@ -286,7 +286,7 @@ def _offer_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: st
         print("Data-only -- no model trained.")
         return 0
 
-    from ilqspr.models.training import train_ensemble
+    from qspr_il.models.training import train_ensemble
 
     mole_fraction_col = None if solvent_name is None else "Mole_fraction_IL"
     system_label = solvent_name or "pure"

@@ -1,7 +1,7 @@
 import pandas as pd
 
-from ilqspr import cli
-from ilqspr.registry import get as get_spec
+from qspr_il import cli
+from qspr_il.registry import get as get_spec
 
 
 def _write_input_csv(tmp_path, rows):
@@ -138,7 +138,7 @@ def test_action_data_fetches_and_saves_curated_csv(monkeypatch, tmp_path, capsys
         ]
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
-    monkeypatch.setattr("ilqspr.data.cleaning.fetch_curated_dataset",
+    monkeypatch.setattr("qspr_il.data.cleaning.fetch_curated_dataset",
                         lambda *a, **k: _fake_curated_df())
 
     rc = cli.main([])
@@ -159,7 +159,7 @@ def test_action_data_reports_error_for_unmatched_property(monkeypatch, capsys):
         raise ValueError("No property matching 'not-a-real-property' found.")
 
     monkeypatch.setattr(
-        "ilqspr.data.cleaning.fetch_curated_dataset", raise_value_error)
+        "qspr_il.data.cleaning.fetch_curated_dataset", raise_value_error)
 
     rc = cli.main([])
     assert rc == 1
@@ -183,16 +183,16 @@ def test_action_both_chains_into_matching_prediction_model(monkeypatch, tmp_path
         ]
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
-    monkeypatch.setattr("ilqspr.data.cleaning.fetch_curated_dataset",
+    monkeypatch.setattr("qspr_il.data.cleaning.fetch_curated_dataset",
                         lambda *a, **k: _fake_curated_df(n=1))
     monkeypatch.setattr(
-        "ilqspr.cli.find_spec",
+        "qspr_il.cli.find_spec",
         lambda property_name, solvent_label: get_spec("8"),  # density, pure IL
     )
-    from ilqspr.models.engine import load_models_and_metadata as real_load_models_and_metadata
+    from qspr_il.models.engine import load_models_and_metadata as real_load_models_and_metadata
 
     monkeypatch.setattr(
-        "ilqspr.cli.load_models_and_metadata", lambda model_dir: real_load_models_and_metadata(
+        "qspr_il.cli.load_models_and_metadata", lambda model_dir: real_load_models_and_metadata(
             fake_ensemble_dir)
     )
 
@@ -218,7 +218,7 @@ def test_action_both_skips_prediction_when_no_matching_model(monkeypatch, tmp_pa
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
     monkeypatch.setattr(
-        "ilqspr.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df(
+        "qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df(
             property_name="Viscosity", n=1)
     )
 
@@ -267,7 +267,7 @@ def test_action_both_auto_trains_and_predicts_when_no_matching_model(monkeypatch
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
     monkeypatch.setattr(
-        "ilqspr.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
+        "qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
     )
 
     rc = cli.main([])
@@ -296,7 +296,7 @@ def test_action_both_can_decline_training_after_no_matching_model(monkeypatch, t
     )
     monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
     monkeypatch.setattr(
-        "ilqspr.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
+        "qspr_il.data.cleaning.fetch_curated_dataset", lambda *a, **k: _fake_curated_df_for_training()
     )
 
     rc = cli.main([])

@@ -7,7 +7,7 @@ honest alternative: group k-fold cross-validation (grouped by IL SMILES, so no c
 between train and validation) produces several train/validation splits, and one XGBoost
 regressor with fixed, reasonable hyperparameters is fit per split. The result has the exact
 same shape as the existing trained ensembles (``model_i.joblib`` + ``metadata_i.json``, loaded
-the same way by :func:`ilqspr.models.engine.load_models_and_metadata`), so a model trained
+the same way by :func:`qspr_il.models.engine.load_models_and_metadata`), so a model trained
 here works with the rest of the prediction pipeline unmodified -- it just wasn't tuned as
 rigorously as the ones shipped with the project.
 """
@@ -24,7 +24,7 @@ from mordred import Calculator, descriptors as mordred_descriptors
 from sklearn.model_selection import GroupKFold
 from xgboost import XGBRegressor
 
-from ilqspr.models.engine import LoadedEnsemble, process_il_smiles_list
+from qspr_il.models.engine import LoadedEnsemble, process_il_smiles_list
 
 DEFAULT_HYPERPARAMETERS = {
     "max_depth": 6,
@@ -77,12 +77,12 @@ def train_ensemble(
     progress_callback=None,
 ) -> tuple[LoadedEnsemble, list[dict]]:
     """Train a new ``n_models``-member XGBoost ensemble and save it under ``output_dir`` in the
-    same ``model_i.joblib`` / ``metadata_i.json`` shape :func:`~ilqspr.models.engine.load_models_and_metadata`
+    same ``model_i.joblib`` / ``metadata_i.json`` shape :func:`~qspr_il.models.engine.load_models_and_metadata`
     expects.
 
-    ``curated_df`` is typically the output of :func:`ilqspr.data.cleaning.fetch_curated_dataset`.
+    ``curated_df`` is typically the output of :func:`qspr_il.data.cleaning.fetch_curated_dataset`.
     ``mole_fraction_col=None`` trains a pure-IL model (no mixture-composition feature), matching
-    :func:`ilqspr.models.engine.predict`'s convention. Returns the trained (in-memory) ensemble
+    :func:`qspr_il.models.engine.predict`'s convention. Returns the trained (in-memory) ensemble
     plus a list of per-model validation metrics (RMSE, R2, fold sizes) so the caller can report
     how well it did before trusting it.
     """

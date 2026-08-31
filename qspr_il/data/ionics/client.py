@@ -11,7 +11,7 @@ lives here permanently, with two fixes over the original:
    The default (``data_root=None`` -> ``Path.cwd()/"data"``) preserves prior behavior.
 
 This module only fetches and reshapes raw ILThermo data — it performs no
-deduplication, consistency checking, or filtering. See :mod:`ilqspr.data.cleaning`
+deduplication, consistency checking, or filtering. See :mod:`qspr_il.data.cleaning`
 for that.
 """
 
@@ -159,13 +159,13 @@ def getData(
 def download_idsets(setids: list[str], output_dir: str | Path, progress_callback=None) -> Path:
     """Download each ILThermo dataset id in ``setids`` and save it as one JSON file per set.
 
-    Extracted out of :func:`getData` so callers (e.g. :mod:`ilqspr.data.cleaning`) can
+    Extracted out of :func:`getData` so callers (e.g. :mod:`qspr_il.data.cleaning`) can
     filter a broad search's results (by exact property name, since the ``prp`` id lookup
     used by :func:`getIdsets` can go stale against the live ILThermo API) before downloading,
     rather than always fetching every idset a search returns.
 
     ``progress_callback``, if given, is called as ``progress_callback(index, total, setid)``
-    before each download (``index`` is 1-based) -- used by :mod:`ilqspr.data.cleaning` and
+    before each download (``index`` is 1-based) -- used by :mod:`qspr_il.data.cleaning` and
     the Streamlit app to show live download progress.
     """
     output_dir = Path(output_dir)

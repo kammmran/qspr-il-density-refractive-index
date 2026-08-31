@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ilqspr.data import cleaning
+from qspr_il.data import cleaning
 
 # A real, valid SMILES for an imidazolium-based IL and its cation/anion parts,
 # used across tests so RDKit standardization succeeds.
