@@ -598,7 +598,11 @@ def _run_single_entry_mode(spec: ModelSpec) -> None:
 
         mean = result.loc[0, "prediction_mean"]
         std = result.loc[0, "prediction_std"]
-        st.metric(f"Predicted {spec.target_column}", f"{mean} ± {std}")
+        decimals = 2 if abs(mean) >= 10 else 4
+        st.metric(
+            f"Predicted {spec.target_column}",
+            f"{mean:.{decimals}f} ± {std:.{decimals}f}",
+        )
         if result.loc[0, "Changes"] != "No changes":
             st.caption(f"SMILES standardization: {result.loc[0, 'Changes']}")
         _render_download_buttons(
