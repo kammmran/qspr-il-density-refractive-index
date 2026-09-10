@@ -273,6 +273,29 @@ def _render_download_buttons(result: pd.DataFrame, spec: ModelSpec, file_stub: s
     )
 
 
+def _pick_directory_dialog() -> str | None:
+    """Open a native OS folder-picker and return the chosen path.
+
+    Only works when the app runs on the same machine as the browser (i.e. local
+    ``streamlit run``); on a remote/hosted server there is no desktop to show a
+    dialog, so this returns ``None`` and the user types the path instead.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", 1)
+        chosen = filedialog.askdirectory(title="Select a folder to save the trained model")
+        root.destroy()
+        return chosen or None
+    except Exception as e:  # no display, tkinter missing, hosted env, ...
+        st.warning(
+            f"Couldn't open a folder dialog here ({e}). Type the destination path manually.")
+        return None
+
+
 def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: str | None) -> None:
     """No trained model exists for this property -- offer to train a new one on the data just
     fetched (group k-fold XGBoost ensemble, see qspr_il.models.training), then optionally run
@@ -281,14 +304,27 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
     st.info(
         f"No trained prediction model exists yet for '{resolved_property}'.")
     system_label = solvent_name or "pure"
-    default_dir = f"results/custom_models/{resolved_property.lower().replace(' ', '_')}_{system_label}_ensemble_model"
+    model_folder_name = (
+        f"{resolved_property.lower().replace(' ', '_')}_{system_label}_ensemble_model")
+    base_dir = st.session_state.get(
+        "custom_model_base_dir", str(Path("results/custom_models").resolve()))
 
     col1, col2 = st.columns([1, 2])
     with col1:
         n_models = st.number_input(
             "Ensemble members to train", min_value=1, max_value=5, value=5)
     with col2:
-        output_dir = st.text_input("Save trained model to", value=default_dir)
+        if st.button("📁 Browse for a folder on this PC…"):
+            picked = _pick_directory_dialog()
+            if picked:
+                st.session_state["custom_model_base_dir"] = picked
+                base_dir = picked
+        output_dir = st.text_input(
+            "Save trained model to",
+            value=str(Path(base_dir) / model_folder_name),
+            help="Full path where the trained model folder will be written. Use 'Browse' "
+            "to pick a folder on the machine running this app.",
+        )
 
     if st.button("Train a new model on this data", type="primary"):
         from qspr_il.models.training import train_ensemble
