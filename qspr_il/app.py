@@ -49,6 +49,28 @@ def _select_spec() -> ModelSpec:
     return next(s for s in specs if s.property_name == property_name and s.solvent == solvent)
 
 
+def _make_progress_callback(status):
+    """Build a ``progress_callback(message, fraction=None)`` for the pipeline functions.
+
+    Every message is appended to the ``st.status`` log (so the user gets the full, detailed
+    narrative of what each stage does), and whenever a ``fraction`` in ``[0, 1]`` is supplied
+    it also drives an in-place ``st.progress`` bar -- a tqdm-style moving bar rather than only
+    a growing list of lines.
+    """
+    bar = {"widget": None}
+
+    def _on_progress(message: str, fraction: float | None = None) -> None:
+        status.write(message)
+        if fraction is not None:
+            pct = max(0, min(100, int(round(fraction * 100))))
+            if bar["widget"] is None:
+                bar["widget"] = status.progress(pct, text=message)
+            else:
+                bar["widget"].progress(pct, text=message)
+
+    return _on_progress
+
+
 def _run_prediction_with_status(
     data: pd.DataFrame,
     spec: ModelSpec,
@@ -65,9 +87,7 @@ def _run_prediction_with_status(
     Returns the result DataFrame, or ``None`` if prediction failed (the caller should stop).
     """
     status = st.status(label, expanded=True)
-
-    def _on_progress(message: str) -> None:
-        status.write(message)
+    _on_progress = _make_progress_callback(status)
 
     try:
         result = run_prediction(
@@ -332,9 +352,7 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
         mole_fraction_col = None if solvent_name is None else "Mole_fraction_IL"
         status = st.status(
             f"Training a new model for '{resolved_property}'...", expanded=True)
-
-        def _on_progress(message: str) -> None:
-            status.write(message)
+        _on_progress = _make_progress_callback(status)
 
         try:
             ensemble, metrics = train_ensemble(
@@ -450,9 +468,7 @@ def _run_data_mode(also_run_model: bool) -> None:
     if st.button("Fetch data", type="primary"):
         status = st.status(
             f"Fetching '{property_query}' data from ILThermo...", expanded=True)
-
-        def _on_progress(message: str) -> None:
-            status.write(message)
+        _on_progress = _make_progress_callback(status)
 
         try:
             df = fetch_curated_dataset(
