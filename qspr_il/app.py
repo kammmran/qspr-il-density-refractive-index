@@ -29,8 +29,6 @@ from qspr_il.registry import ModelSpec, iter_specs
 from qspr_il.registry import find as find_spec
 
 _BANNER_IMAGE = Path(__file__).resolve().parent / "assets" / "il_github.png"
-_UMAP_DIR = Path(__file__).resolve().parent.parent / \
-    "results" / "interactive_umap"
 DEFAULT_TEMP_RANGE = (253.0, 573.0)
 DEFAULT_PRESSURE_RANGE = (90.0, 110.0)
 KNOWN_DATA_SOLVENTS = ["Pure ionic liquid",
@@ -275,38 +273,6 @@ def _render_download_buttons(result: pd.DataFrame, spec: ModelSpec, file_stub: s
     )
 
 
-def _umap_file_for_spec(spec: ModelSpec) -> Path | None:
-    """The pre-generated UMAP visualization matching ``spec``, if one exists.
-
-    Only the 6 mixture models (density/RI x water/ethanol/isopropanol) have one -- there's no
-    pure-IL variant in ``results/interactive_umap/``.
-    """
-    if spec.is_pure:
-        return None
-    property_token = "density" if spec.property_name == "Density" else "ri"
-    path = _UMAP_DIR / \
-        f"{property_token}_{spec.solvent.lower()}_neighbors5_dist01.html"
-    return path if path.exists() else None
-
-
-def _render_umap_expander(spec: ModelSpec) -> None:
-    """Show the matching UMAP visualization (training data vs. external test set) for this
-    model's predictions, collapsed by default so the heavy HTML file isn't loaded unless asked
-    for."""
-    umap_file = _umap_file_for_spec(spec)
-    if umap_file is None:
-        return
-    with st.expander("Training data vs. external test set (UMAP)", expanded=False):
-        st.caption(
-            "2D UMAP projection (n_neighbors=5, min_dist=0.1) of the Mordred descriptor space "
-            f"for {spec.label}."
-        )
-        try:
-            st.iframe(umap_file, height=700)
-        except Exception as e:
-            st.error(f"Could not load {umap_file.name}: {e}")
-
-
 def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: str | None) -> None:
     """No trained model exists for this property -- offer to train a new one on the data just
     fetched (group k-fold XGBoost ensemble, see qspr_il.models.training), then optionally run
@@ -527,7 +493,6 @@ def _run_data_mode(also_run_model: bool) -> None:
             result, spec, f"{spec.property_name.lower().replace(' ', '_')}_{spec.solvent.replace(' ', '_')}_predictions_from_fetched_data"
         )
         _render_report(result, spec)
-        _render_umap_expander(spec)
 
 
 def _run_csv_mode(spec: ModelSpec) -> None:
@@ -563,7 +528,6 @@ def _run_csv_mode(spec: ModelSpec) -> None:
     _render_download_buttons(
         result, spec, f"{spec.property_name.lower().replace(' ', '_')}_{spec.solvent.replace(' ', '_')}_predictions")
     _render_report(result, spec)
-    _render_umap_expander(spec)
 
 
 def _run_single_entry_mode(spec: ModelSpec) -> None:
@@ -607,7 +571,6 @@ def _run_single_entry_mode(spec: ModelSpec) -> None:
             st.caption(f"SMILES standardization: {result.loc[0, 'Changes']}")
         _render_download_buttons(
             result, spec, f"{spec.property_name.lower().replace(' ', '_')}_{spec.solvent.replace(' ', '_')}_prediction")
-        _render_umap_expander(spec)
 
 
 def main() -> None:
@@ -625,8 +588,7 @@ def main() -> None:
         "What do you want to do?",
         ["Run prediction model", "Fetch & clean data", "Both"],
         help="'Both' fetches ILThermo data for any property, then offers to run the "
-        "matching trained model on it if one exists (currently: density, refractive index). "
-        "Running a model shows its matching UMAP visualization in the results, if one exists.",
+        "matching trained model on it if one exists (currently: density, refractive index).",
     )
 
     if action == "Fetch & clean data":
