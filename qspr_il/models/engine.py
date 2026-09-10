@@ -378,9 +378,9 @@ def predict(
 
     _report("Combining ensemble predictions into a consensus mean ± standard deviation...", 1.0)
     data["prediction_mean"] = pd.concat(
-        predictions, axis=1).mean(axis=1).round(4)
+        predictions, axis=1).mean(axis=1).round(2)
     data["prediction_std"] = pd.concat(
-        predictions, axis=1).std(axis=1).round(4)
+        predictions, axis=1).std(axis=1).round(2)
     return data
 
 

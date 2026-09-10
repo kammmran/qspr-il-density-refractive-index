@@ -49,6 +49,11 @@ def _select_spec() -> ModelSpec:
     return next(s for s in specs if s.property_name == property_name and s.solvent == solvent)
 
 
+def _show_df(df: pd.DataFrame, **kwargs) -> None:
+    """``st.dataframe`` with every float column rounded to 2 decimal places for display."""
+    st.dataframe(df.round(2), **kwargs)
+
+
 def _make_progress_callback(status):
     """Build a ``progress_callback(message, fraction=None)`` for the pipeline functions.
 
@@ -126,9 +131,9 @@ def _render_report(result: pd.DataFrame, spec: ModelSpec) -> None:
     cols = st.columns(4)
     cols[0].metric("Rows predicted", f"{int(valid.sum())} / {len(result)}")
     cols[1].metric(f"Mean {spec.target_column}",
-                   f"{result.loc[valid, 'prediction_mean'].mean():.4f}" if valid.any() else "n/a")
+                   f"{result.loc[valid, 'prediction_mean'].mean():.2f}" if valid.any() else "n/a")
     cols[2].metric("Mean ensemble std",
-                   f"{std_series.mean():.4f}" if len(std_series) else "n/a")
+                   f"{std_series.mean():.2f}" if len(std_series) else "n/a")
     cols[3].metric("Unparseable SMILES", int(invalid_smiles.sum()))
 
     if valid.sum() == 0:
@@ -142,7 +147,7 @@ def _render_report(result: pd.DataFrame, spec: ModelSpec) -> None:
     hist_df = pd.DataFrame(
         {"count": counts},
         index=[
-            f"{bin_edges[i]:.3g}-{bin_edges[i + 1]:.3g}" for i in range(len(bin_edges) - 1)],
+            f"{bin_edges[i]:.2f}-{bin_edges[i + 1]:.2f}" for i in range(len(bin_edges) - 1)],
     )
     st.bar_chart(hist_df)
 
@@ -152,12 +157,12 @@ def _render_report(result: pd.DataFrame, spec: ModelSpec) -> None:
 
     top_uncertain = result.loc[valid].sort_values(
         "prediction_std", ascending=False).head(5)
-    with st.expander(f"5 highest-uncertainty predictions (std > {high_uncertainty_threshold:.4g})"):
-        st.dataframe(top_uncertain)
+    with st.expander(f"5 highest-uncertainty predictions (std > {high_uncertainty_threshold:.2f})"):
+        _show_df(top_uncertain)
 
     if invalid_smiles.any():
         with st.expander(f"{int(invalid_smiles.sum())} row(s) with unparseable SMILES (excluded above)"):
-            st.dataframe(result.loc[invalid_smiles])
+            _show_df(result.loc[invalid_smiles])
 
 
 _PDF_TABLE_COLUMNS = [
@@ -198,8 +203,8 @@ def _build_pdf_report(result: pd.DataFrame, spec: ModelSpec) -> bytes:
     if valid.any():
         elements.append(
             Paragraph(
-                f"Mean {spec.target_column}: {result.loc[valid, 'prediction_mean'].mean():.4f} "
-                f"(mean ensemble std {result.loc[valid, 'prediction_std'].mean():.4f})",
+                f"Mean {spec.target_column}: {result.loc[valid, 'prediction_mean'].mean():.2f} "
+                f"(mean ensemble std {result.loc[valid, 'prediction_std'].mean():.2f})",
                 styles["Normal"],
             )
         )
@@ -239,7 +244,7 @@ def _build_pdf_report(result: pd.DataFrame, spec: ModelSpec) -> bytes:
     elements.append(Paragraph("Results", styles["Heading2"]))
     table_cols = [c for c in _PDF_TABLE_COLUMNS if c in result.columns]
     table_df = result[table_cols].head(_PDF_MAX_TABLE_ROWS)
-    table_data = [table_cols] + table_df.astype(str).values.tolist()
+    table_data = [table_cols] + table_df.round(2).astype(str).values.tolist()
     table = Table(table_data, repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -398,7 +403,7 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
 
     st.markdown(
         "**Validation metrics** (group k-fold by IL SMILES, not this project's original tuning methodology)")
-    st.dataframe(pd.DataFrame(metrics))
+    _show_df(pd.DataFrame(metrics))
 
     if st.button(f"Run this newly trained model on the fetched data", type="primary"):
         result = _run_prediction_with_status(
@@ -406,7 +411,7 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
         )
         if result is None:
             return
-        st.dataframe(result)
+        _show_df(result)
         _render_download_buttons(
             result, spec, f"{resolved_property.lower().replace(' ', '_')}_{system_label}_predictions_from_custom_model")
         _render_report(result, spec)
@@ -513,7 +518,7 @@ def _run_data_mode(also_run_model: bool) -> None:
         return
 
     st.success(f"Fetched {len(df)} curated rows for '{resolved_property}'.")
-    st.dataframe(df)
+    _show_df(df)
     st.download_button(
         "Download curated CSV",
         df.to_csv(index=False),
@@ -540,7 +545,7 @@ def _run_data_mode(also_run_model: bool) -> None:
         )
         if result is None:
             return
-        st.dataframe(result)
+        _show_df(result)
         _render_download_buttons(
             result, spec, f"{spec.property_name.lower().replace(' ', '_')}_{spec.solvent.replace(' ', '_')}_predictions_from_fetched_data"
         )
@@ -576,7 +581,7 @@ def _run_csv_mode(spec: ModelSpec) -> None:
         return
     result, _ = cached
 
-    st.dataframe(result)
+    _show_df(result)
     _render_download_buttons(
         result, spec, f"{spec.property_name.lower().replace(' ', '_')}_{spec.solvent.replace(' ', '_')}_predictions")
     _render_report(result, spec)
@@ -614,10 +619,9 @@ def _run_single_entry_mode(spec: ModelSpec) -> None:
 
         mean = result.loc[0, "prediction_mean"]
         std = result.loc[0, "prediction_std"]
-        decimals = 2 if abs(mean) >= 10 else 4
         st.metric(
             f"Predicted {spec.target_column}",
-            f"{mean:.{decimals}f} ± {std:.{decimals}f}",
+            f"{mean:.2f} ± {std:.2f}",
         )
         if result.loc[0, "Changes"] != "No changes":
             st.caption(f"SMILES standardization: {result.loc[0, 'Changes']}")
