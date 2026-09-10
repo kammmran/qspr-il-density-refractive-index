@@ -127,6 +127,13 @@ def list_available_properties() -> list[str]:
         return [row["property"] for row in csv.DictReader(f) if row.get("property")]
 
 
+# Common names users type that don't literally appear in ILThermo's display strings.
+_PROPERTY_SYNONYMS = {
+    "interfacial tension": "surface tension liquid gas",
+    "surface tension": "surface tension liquid gas",
+}
+
+
 def resolve_property_display_name(idsets_json: dict, requested: str) -> str | None:
     """Match a user-supplied property name/short-name against a live search result's
     actual property display names (e.g. resolve ``"refractive-index"`` or ``"refractive"``
@@ -139,14 +146,23 @@ def resolve_property_display_name(idsets_json: dict, requested: str) -> str | No
     candidates = sorted({row[2]
                         for row in idsets_json.get("res", []) if row[2]})
     requested_norm = requested.strip().lower().replace("-", " ")
+    requested_norm = _PROPERTY_SYNONYMS.get(requested_norm, requested_norm)
     for candidate in candidates:
-        if candidate.lower() == requested_norm:
+        if candidate.lower().replace("-", " ") == requested_norm:
             return candidate
     for candidate in candidates:
-        candidate_norm = candidate.lower()
+        candidate_norm = candidate.lower().replace("-", " ")
         if requested_norm in candidate_norm or candidate_norm in requested_norm:
             return candidate
-    return None
+    # Token-overlap fallback: pick the candidate sharing the most words with the
+    # request (e.g. "interfacial tension" -> "Surface tension liquid-gas").
+    requested_tokens = set(requested_norm.replace("-", " ").split())
+    best, best_overlap = None, 0
+    for candidate in candidates:
+        overlap = len(requested_tokens & set(candidate.lower().replace("-", " ").split()))
+        if overlap > best_overlap:
+            best, best_overlap = candidate, overlap
+    return best
 
 
 def compute_molecular_fields(smiles: str) -> dict:
