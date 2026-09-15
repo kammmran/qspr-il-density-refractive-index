@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -8,6 +10,7 @@ from qspr_il.data import cleaning
 # used across tests so RDKit standardization succeeds.
 IL_SMILES = "CCCCn1cc[n+](C)c1.F[B-](F)(F)F"
 ETHANOL_SMILES = "CCO"
+WATER_SMILES = "O"
 
 
 def _pure_raw_row(**overrides):
@@ -39,6 +42,29 @@ def _mixture_raw_row(**overrides):
         "component 2 idout": "C001",
         "component 2 name": "1-butyl-3-methylimidazolium tetrafluoroborate",
         "component 2 SMILES": IL_SMILES,
+    }
+    row.update(overrides)
+    return row
+
+
+def _ternary_raw_row(**overrides):
+    row = {
+        "idset": "SET3",
+        "author": "Doe et al.",
+        "Temperature, K": 298.15,
+        "Pressure, kPa": 101.0,
+        "Mole fraction of ethanol": 0.3,
+        "Mole fraction of water": 0.2,
+        "Specific density, kg/m3 - Liquid": 950.0,
+        "component 1 idout": "C002",
+        "component 1 name": "ethanol",
+        "component 1 SMILES": ETHANOL_SMILES,
+        "component 2 idout": "C001",
+        "component 2 name": "1-butyl-3-methylimidazolium tetrafluoroborate",
+        "component 2 SMILES": IL_SMILES,
+        "component 3 idout": "C003",
+        "component 3 name": "water",
+        "component 3 SMILES": WATER_SMILES,
     }
     row.update(overrides)
     return row
@@ -105,6 +131,17 @@ def test_filter_conditions_pressure_range_none_skips_pressure_filter():
     )
     filtered = cleaning.filter_conditions(df, pressure_range=None)
     assert len(filtered) == 2
+
+
+def test_filter_conditions_temp_range_none_skips_temperature_filter():
+    df = pd.DataFrame(
+        {
+            "Temperature (K)": [100.0, 298.15, 900.0],
+            "Pressure (kPa)": [101.0, 101.0, 101.0],
+        }
+    )
+    filtered = cleaning.filter_conditions(df, temp_range=None)
+    assert len(filtered) == 3
 
 
 def test_filter_property_range():
@@ -249,6 +286,127 @@ def test_build_curated_dataset_handles_concatenated_idsets_with_different_column
     assert by_setid.loc["SET_B", "Property_value"] == 1100.0
     assert by_setid.loc["SET_B", "Mole_fraction_IL"] == pytest.approx(
         0.7)  # reported directly against the IL
+
+
+def test_build_curated_dataset_ternary_columns_match_target_schema():
+    raw_df = pd.DataFrame([_ternary_raw_row()])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol", solvent_name_2="water")
+    assert list(curated.columns) == cleaning.GENERIC_TERNARY_COLUMNS
+    assert len(curated) == 1
+    assert curated.loc[0, "Solvent_name"] == "ethanol"
+    assert curated.loc[0, "Solvent2_name"] == "water"
+    assert curated.loc[0,
+                       "IL_name"] == "1-butyl-3-methylimidazolium tetrafluoroborate"
+    assert curated.loc[0, "Property_value"] == 950.0
+
+
+def test_build_curated_dataset_ternary_derives_il_fraction_from_the_two_solvents():
+    # Only the two solvents' mole fractions are reported (0.3 + 0.2); the IL's own share
+    # must come out as the remainder (0.5), matching this project's Mole_fraction_IL convention.
+    raw_df = pd.DataFrame([_ternary_raw_row()])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol", solvent_name_2="water")
+    assert curated.loc[0, "Mole fraction of solvent"] == pytest.approx(0.3)
+    assert curated.loc[0, "Mole fraction of solvent 2"] == pytest.approx(0.2)
+    assert curated.loc[0, "Mole_fraction_IL"] == pytest.approx(0.5)
+
+
+def test_build_curated_dataset_ternary_derives_missing_solvent_fraction():
+    # Same composition, but this time ILThermo reported the IL's fraction directly instead of
+    # the second solvent's -- the second solvent's share must still be derived correctly.
+    raw_df = pd.DataFrame(
+        [_ternary_raw_row(**{
+            "Mole fraction of water": None,
+            "Mole fraction of 1-butyl-3-methylimidazolium tetrafluoroborate": 0.5,
+        })]
+    )
+    raw_df = raw_df.drop(columns=["Mole fraction of water"])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol", solvent_name_2="water")
+    assert curated.loc[0, "Mole fraction of solvent"] == pytest.approx(0.3)
+    assert curated.loc[0, "Mole fraction of solvent 2"] == pytest.approx(0.2)
+    assert curated.loc[0, "Mole_fraction_IL"] == pytest.approx(0.5)
+
+
+def test_build_curated_dataset_ternary_skips_row_with_only_one_reported_fraction():
+    # Only one of the three mole fractions is reported -- not enough to derive the others,
+    # so the row must be dropped rather than guessed at.
+    raw_df = pd.DataFrame(
+        [_ternary_raw_row(**{"Mole fraction of water": None})])
+    raw_df = raw_df.drop(columns=["Mole fraction of water"])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol", solvent_name_2="water")
+    assert curated.empty
+
+
+def test_build_curated_dataset_ternary_skips_row_missing_a_named_component():
+    # The row only has two components (no water), so it can't be matched to a three-component
+    # ethanol+water+IL system and must be dropped.
+    raw_df = pd.DataFrame([_mixture_raw_row()])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name="ethanol", solvent_name_2="water")
+    assert curated.empty
+
+
+def test_build_curated_dataset_all_systems_mixes_pure_binary_and_ternary_rows():
+    # A single all_systems batch, as ILThermo's ncmp=0 "all" search would return: pure,
+    # binary, and ternary idsets concatenated together, with pandas NaN-padding whichever
+    # component/mole-fraction columns a given row's own idset doesn't have.
+    raw_df = pd.concat(
+        [
+            pd.DataFrame([_pure_raw_row()]),
+            pd.DataFrame([_mixture_raw_row()]),
+            pd.DataFrame([_ternary_raw_row()]),
+        ],
+        ignore_index=True,
+    )
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, all_systems=True)
+    assert list(curated.columns) == cleaning.GENERIC_TERNARY_COLUMNS
+    assert len(curated) == 3
+
+    by_setid = curated.set_index("setid")
+    assert pd.isna(by_setid.loc["SET1", "Solvent_name"])
+    assert pd.isna(by_setid.loc["SET1", "Solvent2_name"])
+    assert by_setid.loc["SET2", "Solvent_name"] == "ethanol"
+    assert pd.isna(by_setid.loc["SET2", "Solvent2_name"])
+    assert by_setid.loc["SET3", "Solvent_name"] == "ethanol"
+    assert by_setid.loc["SET3", "Solvent2_name"] == "water"
+    assert by_setid.loc["SET3", "Mole_fraction_IL"] == pytest.approx(0.5)
+
+
+def test_build_curated_dataset_all_systems_skips_row_with_unrecognized_solvent():
+    # Component-role auto-detection only works when the non-IL component's name is in
+    # KNOWN_SOLVENTS -- for anything else it can't tell which of the two is the solvent, so
+    # the row must be dropped rather than guessed at (documented limitation of all_systems).
+    raw_df = pd.DataFrame(
+        [_mixture_raw_row(**{
+            "Mole fraction of ethanol": None,
+            "component 1 name": "some-uncatalogued-solvent",
+            "Mole fraction of some-uncatalogued-solvent": 0.4,
+        })]
+    )
+    raw_df = raw_df.drop(columns=["Mole fraction of ethanol"])
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, all_systems=True)
+    assert curated.empty
+
+
+def test_build_curated_dataset_all_systems_with_no_ternary_rows_does_not_crash():
+    # Regression test: when an all_systems batch happens to contain no ternary rows at all
+    # (e.g. this property just has none in range), no row's record dict ever sets
+    # "Solvent2_name" -- it must still exist as an all-NaN column by the time deduplication
+    # keys on it, not raise a KeyError from a column that was never created.
+    raw_df = pd.concat(
+        [pd.DataFrame([_pure_raw_row()]), pd.DataFrame([_mixture_raw_row()])],
+        ignore_index=True,
+    )
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, all_systems=True)
+    assert list(curated.columns) == cleaning.GENERIC_TERNARY_COLUMNS
+    assert len(curated) == 2
+    assert curated["Solvent2_name"].isna().all()
 
 
 def test_build_curated_dataset_works_for_a_non_density_property():
@@ -455,6 +613,86 @@ def test_build_curated_dataset_caches_repeated_name_lookups(monkeypatch):
     assert len(calls) == 1  # same compound name looked up only once
 
 
+def test_build_curated_dataset_temp_range_none_keeps_every_temperature():
+    # Regression test: the CLI's temperature prompt accepts "none" (no limit), which reaches
+    # here as temp_range=None -- it must skip temperature filtering, not crash trying to
+    # unpack the range (pressure_range=None has always meant "no limit" the same way).
+    raw_df = pd.DataFrame(
+        [
+            _pure_raw_row(**{"idset": "COLD", "Temperature, K": 100.0}),
+            _pure_raw_row(**{"idset": "HOT", "Temperature, K": 900.0}),
+        ]
+    )
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, temp_range=None)
+    assert len(curated) == 2  # both are far outside the default 253-573 K range
+
+
+def test_build_curated_dataset_reports_when_no_condition_limits_are_set():
+    raw_df = pd.DataFrame([_pure_raw_row()])
+    messages = []
+    cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None, temp_range=None, pressure_range=None,
+        progress_callback=messages.append,
+    )
+    assert any("no limits set" in m for m in messages)
+
+
+def test_build_curated_dataset_standardizes_each_distinct_structure_once(monkeypatch):
+    # RDKit standardization is expensive and the same IL shows up in many rows, so each
+    # distinct structure must only be standardized once per batch. This also keeps an
+    # unparseable structure from re-logging RDKit's parse error on every single row.
+    raw_df = pd.DataFrame(
+        [_pure_raw_row(**{"idset": f"SET{i}", "Temperature, K": 298.15 + i})
+         for i in range(5)]
+    )
+    calls = []
+    real_compute = cleaning.compute_molecular_fields
+    monkeypatch.setattr(
+        cleaning, "compute_molecular_fields",
+        lambda smiles: calls.append(smiles) or real_compute(smiles),
+    )
+
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
+    assert len(curated) == 5
+    assert len(calls) == 1  # one structure, standardized once -- not once per row
+
+
+def test_build_curated_dataset_only_attempts_the_failing_id_based_parse_once(monkeypatch):
+    # Regression test: re-parsing an already-known-unparseable id-based SMILES (a bare
+    # molecular formula, here) on every single row that references the same compound --
+    # rather than once per compound -- both wastes work and floods stderr with RDKit's own
+    # parse-error logging once per row. It must only be attempted the first time a given
+    # compound name is seen; every later row should hit the cache instead.
+    raw_df = pd.DataFrame(
+        [
+            _pure_raw_row(
+                **{"component 1 SMILES": IL_FORMULA, "idset": "SET1"}),
+            _pure_raw_row(**{"component 1 SMILES": IL_FORMULA,
+                          "idset": "SET2", "Temperature, K": 300.0}),
+            _pure_raw_row(**{"component 1 SMILES": IL_FORMULA,
+                          "idset": "SET3", "Temperature, K": 310.0}),
+        ]
+    )
+    parse_calls = []
+    real_mol_from_smiles = cleaning.MolFromSmiles
+
+    def counting_mol_from_smiles(smiles, *a, **k):
+        if smiles == IL_FORMULA:
+            parse_calls.append(smiles)
+        return real_mol_from_smiles(smiles, *a, **k)
+
+    monkeypatch.setattr(cleaning, "MolFromSmiles", counting_mol_from_smiles)
+    monkeypatch.setattr(cleaning, "resolve_smiles_by_name",
+                        lambda name, timeout=10.0: IL_SMILES)
+
+    curated = cleaning.build_curated_dataset(
+        raw_df, "Density", solvent_name=None)
+    assert len(curated) == 3
+    assert len(parse_calls) == 1  # the failing formula was only parse-attempted once
+
+
 def test_fetch_curated_dataset_raises_clear_error_for_unmatched_property(tmp_path, monkeypatch):
     def fake_getIdsets(**kwargs):
         path = tmp_path / "idsets.json"
@@ -465,3 +703,37 @@ def test_fetch_curated_dataset_raises_clear_error_for_unmatched_property(tmp_pat
     with pytest.raises(ValueError, match="not-a-real-property"):
         cleaning.fetch_curated_dataset(
             "not-a-real-property", None, data_root=tmp_path)
+
+
+def test_fetch_curated_dataset_all_systems_merges_three_separate_searches(tmp_path, monkeypatch):
+    # Regression test: the live ILThermo API rejects a bare ncmp="0" search outright (confirmed
+    # empirically -- it responds with an "errors" payload, not actual results, since ncmp=0
+    # alone isn't a real search criterion to it). So all_systems must run three genuinely
+    # restricted searches (ncmp=1/2/3) and merge them, rather than one ncmp=0 request.
+    # "Activity" is a real example of a property ILThermo only reports for mixtures (ncmp=2/3),
+    # never for a pure single-component system (ncmp=1) -- used here to confirm the merge
+    # actually combines all three sub-searches rather than only using one of them.
+    calls = []
+    fake_results = {
+        "1": [["id_pure", "auth", "Density", "Liquid"]],
+        "2": [["id_bin", "auth", "Activity", "Liquid"]],
+        "3": [["id_ter", "auth", "Activity", "Liquid"]],
+    }
+
+    def fake_getIdsets(**kwargs):
+        calls.append(kwargs["ncmp"])
+        path = tmp_path / f"idsets_{kwargs['ncmp']}.json"
+        path.write_text(json.dumps({"res": fake_results[kwargs["ncmp"]]}))
+        return path
+
+    monkeypatch.setattr(cleaning.ionics_client, "getIdsets", fake_getIdsets)
+    monkeypatch.setattr(cleaning.ionics_client, "download_idsets",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(cleaning.ionics_client, "convert2csv",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(cleaning.ionics_client, "addSmiles",
+                        lambda *a, **k: None)
+
+    cleaning.fetch_curated_dataset(
+        "activity", None, all_systems=True, data_root=tmp_path)
+    assert calls == ["1", "2", "3"]

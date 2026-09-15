@@ -31,13 +31,52 @@ from qspr_il.registry import find as find_spec
 _BANNER_IMAGE = Path(__file__).resolve().parent / "assets" / "il_github.png"
 DEFAULT_TEMP_RANGE = (253.0, 573.0)
 DEFAULT_PRESSURE_RANGE = (90.0, 110.0)
-KNOWN_DATA_SOLVENTS = ["Pure ionic liquid",
-                       "water", "ethanol", "isopropanol", "Other..."]
+KNOWN_DATA_SOLVENTS = ["water", "ethanol", "isopropanol", "Other..."]
+SYSTEM_ALL, SYSTEM_PURE, SYSTEM_BINARY, SYSTEM_TERNARY = (
+    "All compounds and mixtures (pure, binary and ternary together)",
+    "Pure compound (a pure ionic liquid)",
+    "Binary mixture (ionic liquid + one solvent)",
+    "Ternary mixture (ionic liquid + two solvents)",
+)
+SYSTEM_TYPES = [SYSTEM_ALL, SYSTEM_PURE, SYSTEM_BINARY, SYSTEM_TERNARY]
 
 
 @st.cache_resource(show_spinner="Loading trained ensemble...")
 def _load_ensemble(model_dir: str):
     return load_models_and_metadata(model_dir)
+
+
+# These mirror the CLI's own system naming (qspr_il.cli). They're duplicated rather than
+# shared because cli.py deliberately defers importing qspr_il.data.cleaning (and with it
+# RDKit) until a fetch actually runs, so there's no common module cheap enough to host them.
+def _system_label(solvent_name: str | None, solvent_name_2: str | None = None, all_systems: bool = False) -> str:
+    if all_systems:
+        return "all compounds and mixtures"
+    if solvent_name is None:
+        return "pure ionic liquid"
+    if solvent_name_2 is None:
+        return solvent_name
+    return f"{solvent_name} + {solvent_name_2}"
+
+
+def _system_slug(solvent_name: str | None, solvent_name_2: str | None = None, all_systems: bool = False) -> str:
+    if all_systems:
+        return "all"
+    if solvent_name is None:
+        return "pure"
+    if solvent_name_2 is None:
+        return solvent_name
+    return f"{solvent_name}_{solvent_name_2}"
+
+
+def _solvent_picker(label: str, key: str) -> str | None:
+    """A known-solvent dropdown with an "Other..." escape hatch for anything else ILThermo names."""
+    choice = st.selectbox(label, KNOWN_DATA_SOLVENTS, key=f"{key}_choice")
+    if choice != "Other...":
+        return choice
+    st.caption(
+        "SMILES resolution is only reliable for water/ethanol/isopropanol -- other solvents are best-effort.")
+    return st.text_input(f"{label} name (as it appears in ILThermo)", value="", key=f"{key}_name") or None
 
 
 def _select_spec() -> ModelSpec:
@@ -321,16 +360,24 @@ def _pick_directory_dialog() -> str | None:
         return None
 
 
-def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: str | None) -> None:
+def _render_auto_train(
+    df: pd.DataFrame,
+    resolved_property: str,
+    solvent_name: str | None,
+    solvent_name_2: str | None = None,
+    all_systems: bool = False,
+) -> None:
     """No trained model exists for this property -- offer to train a new one on the data just
     fetched (group k-fold XGBoost ensemble, see qspr_il.models.training), then optionally run
     it immediately on the same data.
     """
     st.info(
         f"No trained prediction model exists yet for '{resolved_property}'.")
-    system_label = solvent_name or "pure"
+    is_pure = solvent_name is None and not all_systems
+    label = _system_label(solvent_name, solvent_name_2, all_systems)
+    slug = _system_slug(solvent_name, solvent_name_2, all_systems)
     model_folder_name = (
-        f"{resolved_property.lower().replace(' ', '_')}_{system_label}_ensemble_model")
+        f"{resolved_property.lower().replace(' ', '_')}_{slug}_ensemble_model")
     base_dir = st.session_state.get(
         "custom_model_base_dir", str(Path("results/custom_models").resolve()))
 
@@ -354,9 +401,9 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
     if st.button("Train a new model on this data", type="primary"):
         from qspr_il.models.training import train_ensemble
 
-        mole_fraction_col = None if solvent_name is None else "Mole_fraction_IL"
+        mole_fraction_col = None if is_pure else "Mole_fraction_IL"
         status = st.status(
-            f"Training a new model for '{resolved_property}'...", expanded=True)
+            f"Training a new model for '{resolved_property}' ({label})...", expanded=True)
         _on_progress = _make_progress_callback(status)
 
         try:
@@ -383,23 +430,23 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
             key="custom",
             property_name=resolved_property,
             property_short="",
-            solvent=solvent_name or "pure ionic liquid",
-            is_pure=solvent_name is None,
+            solvent=label,
+            is_pure=is_pure,
             model_dir=Path(output_dir),
             target_column=resolved_property,
             description=f"Custom-trained model for '{resolved_property}'"
-            + (f" in {solvent_name}." if solvent_name else " (pure ionic liquid)."),
+            + (" (pure ionic liquid)." if is_pure else f" in {label}."),
             default_mole_fraction_col=mole_fraction_col,
         )
         st.session_state["trained_model"] = (
-            ensemble, spec, mole_fraction_col, metrics, resolved_property, solvent_name)
+            ensemble, spec, mole_fraction_col, metrics, resolved_property, slug)
 
     cached = st.session_state.get("trained_model")
     if cached is None:
         return
-    ensemble, spec, mole_fraction_col, metrics, cached_property, cached_solvent = cached
-    if cached_property != resolved_property or cached_solvent != solvent_name:
-        return  # stale -- from a different property/solvent fetch
+    ensemble, spec, mole_fraction_col, metrics, cached_property, cached_slug = cached
+    if cached_property != resolved_property or cached_slug != slug:
+        return  # stale -- from a different property/system fetch
 
     st.markdown(
         "**Validation metrics** (group k-fold by IL SMILES, not this project's original tuning methodology)")
@@ -413,7 +460,7 @@ def _render_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: s
             return
         _show_df(result)
         _render_download_buttons(
-            result, spec, f"{resolved_property.lower().replace(' ', '_')}_{system_label}_predictions_from_custom_model")
+            result, spec, f"{resolved_property.lower().replace(' ', '_')}_{slug}_predictions_from_custom_model")
         _render_report(result, spec)
 
 
@@ -424,29 +471,44 @@ def _run_data_mode(also_run_model: bool) -> None:
 
     st.subheader("Fetch & clean ILThermo data")
     st.caption(
-        "Not limited to density/refractive index -- pick any ILThermo property, any of the "
-        "supported solvent systems (or a pure ionic liquid), and a temperature/pressure range."
+        "Not limited to density/refractive index -- pick any ILThermo property, a pure "
+        "compound / binary / ternary system (or all of them at once), and a "
+        "temperature/pressure range."
     )
 
     properties = list_available_properties()
     default_idx = properties.index("density") if "density" in properties else 0
     property_query = st.selectbox("Property", properties, index=default_idx)
 
-    solvent_choice = st.selectbox("System", KNOWN_DATA_SOLVENTS)
-    if solvent_choice == "Pure ionic liquid":
-        solvent_name = None
-    elif solvent_choice == "Other...":
-        solvent_name = st.text_input(
-            "Solvent name (as it appears in ILThermo)", value="") or None
+    system_type = st.selectbox(
+        "System type", SYSTEM_TYPES, index=SYSTEM_TYPES.index(SYSTEM_PURE))
+    all_systems = system_type == SYSTEM_ALL
+    solvent_name = solvent_name_2 = None
+    if system_type == SYSTEM_BINARY:
+        solvent_name = _solvent_picker("Solvent", "solvent1")
+    elif system_type == SYSTEM_TERNARY:
+        scol1, scol2 = st.columns(2)
+        with scol1:
+            solvent_name = _solvent_picker("Solvent 1", "solvent1")
+        with scol2:
+            solvent_name_2 = _solvent_picker("Solvent 2", "solvent2")
+    elif all_systems:
         st.caption(
-            "SMILES resolution is only reliable for water/ethanol/isopropanol -- other solvents are best-effort.")
-    else:
-        solvent_name = solvent_choice
+            "Searches pure, binary and ternary systems together. Since no solvent is named, "
+            "each row's ionic liquid and solvent(s) are told apart automatically -- which only "
+            "works for water/ethanol/isopropanol, so mixtures with other solvents are skipped. "
+            "Name the solvents explicitly (binary/ternary above) to keep those rows."
+        )
+    system = (solvent_name, solvent_name_2, all_systems)
 
     col1, col2 = st.columns(2)
     with col1:
-        temp_min, temp_max = st.slider(
-            "Temperature (K) range", 200.0, 700.0, DEFAULT_TEMP_RANGE)
+        limit_temperature = st.checkbox("Limit temperature range", value=True)
+        temp_range = None
+        if limit_temperature:
+            temp_min, temp_max = st.slider(
+                "Temperature (K) range", 200.0, 700.0, DEFAULT_TEMP_RANGE)
+            temp_range = (temp_min, temp_max)
     with col2:
         limit_pressure = st.checkbox("Limit pressure range", value=True)
         pressure_range = None
@@ -472,18 +534,23 @@ def _run_data_mode(also_run_model: bool) -> None:
 
     if st.button("Fetch data", type="primary"):
         status = st.status(
-            f"Fetching '{property_query}' data from ILThermo...", expanded=True)
+            f"Fetching '{property_query}' data from ILThermo "
+            f"({_system_label(solvent_name, solvent_name_2, all_systems)})...",
+            expanded=True,
+        )
         _on_progress = _make_progress_callback(status)
 
         try:
             df = fetch_curated_dataset(
                 property_query,
                 solvent_name,
+                solvent_name_2,
+                all_systems=all_systems,
                 max_datasets=int(max_datasets),
                 year=year_filter,
                 author=author_filter,
                 keyword=keyword_filter,
-                temp_range=(temp_min, temp_max),
+                temp_range=temp_range,
                 pressure_range=pressure_range,
                 progress_callback=_on_progress,
             )
@@ -500,14 +567,15 @@ def _run_data_mode(also_run_model: bool) -> None:
         )
         resolved_property = df.loc[0, "Property"] if not df.empty else None
         st.session_state["data_result"] = (
-            df, resolved_property, solvent_name, property_query, search_filters)
+            df, resolved_property, system, property_query, search_filters)
 
     cached = st.session_state.get("data_result")
     if cached is None:
         return
-    df, resolved_property, solvent_name, cached_query, cached_filters = cached
-    if cached_query != property_query or cached_filters != search_filters:
-        return  # stale result from a different property selection or filter set
+    df, resolved_property, cached_system, cached_query, cached_filters = cached
+    if cached_query != property_query or cached_filters != search_filters or cached_system != system:
+        return  # stale result from a different property / system / filter set
+    solvent_name, solvent_name_2, all_systems = cached_system
 
     if df.empty:
         st.warning(
@@ -522,18 +590,20 @@ def _run_data_mode(also_run_model: bool) -> None:
     st.download_button(
         "Download curated CSV",
         df.to_csv(index=False),
-        file_name=f"{resolved_property.lower().replace(' ', '_')}_{solvent_name or 'pure'}.csv",
+        file_name=f"{resolved_property.lower().replace(' ', '_')}_"
+        f"{_system_slug(solvent_name, solvent_name_2, all_systems)}.csv",
         mime="text/csv",
     )
 
     if not also_run_model:
         return
 
-    solvent_label = "pure ionic liquid" if solvent_name is None else solvent_name
     try:
-        spec = find_spec(resolved_property, solvent_label)
+        spec = find_spec(resolved_property, _system_label(
+            solvent_name, solvent_name_2, all_systems))
     except KeyError:
-        _render_auto_train(df, resolved_property, solvent_name)
+        _render_auto_train(df, resolved_property,
+                           solvent_name, solvent_name_2, all_systems)
         return
 
     st.markdown(f"**A trained model exists for this data: {spec.label}**")

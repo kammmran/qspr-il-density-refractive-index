@@ -153,6 +153,112 @@ def test_action_data_fetches_and_saves_curated_csv(monkeypatch, tmp_path, capsys
     assert "Saved 2 curated rows" in capsys.readouterr().out
 
 
+def test_action_data_binary_system_prompts_for_one_solvent(monkeypatch, tmp_path):
+    output_csv = tmp_path / "custom" / "density_ethanol.csv"
+    answers = iter(
+        [
+            "2",  # action: fetch data
+            "density",  # property
+            "2",  # system type: binary mixture
+            "ethanol",  # solvent 1 name
+            "none",  # temperature range
+            "none",  # pressure range
+            "",  # search filter: year
+            "",  # search filter: author
+            "",  # search filter: keyword
+            "10",  # max datasets
+            str(output_csv),  # output path
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
+    calls = []
+
+    def fake_fetch(*a, **k):
+        calls.append((a, k))
+        return _fake_curated_df()
+
+    monkeypatch.setattr(
+        "qspr_il.data.cleaning.fetch_curated_dataset", fake_fetch)
+
+    rc = cli.main([])
+    assert rc == 0
+    assert output_csv.exists()
+    (property_query, solvent_name, solvent_name_2), _kwargs = calls[0]
+    assert solvent_name == "ethanol"
+    assert solvent_name_2 is None
+
+
+def test_action_data_ternary_system_prompts_for_two_solvents(monkeypatch, tmp_path):
+    output_csv = tmp_path / "custom" / "density_ethanol_water.csv"
+    answers = iter(
+        [
+            "2",  # action: fetch data
+            "density",  # property
+            "3",  # system type: ternary mixture
+            "ethanol",  # solvent 1 name
+            "water",  # solvent 2 name
+            "none",  # temperature range
+            "none",  # pressure range
+            "",  # search filter: year
+            "",  # search filter: author
+            "",  # search filter: keyword
+            "10",  # max datasets
+            str(output_csv),  # output path
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
+    calls = []
+
+    def fake_fetch(*a, **k):
+        calls.append((a, k))
+        return _fake_curated_df()
+
+    monkeypatch.setattr(
+        "qspr_il.data.cleaning.fetch_curated_dataset", fake_fetch)
+
+    rc = cli.main([])
+    assert rc == 0
+    assert output_csv.exists()
+    (property_query, solvent_name, solvent_name_2), _kwargs = calls[0]
+    assert solvent_name == "ethanol"
+    assert solvent_name_2 == "water"
+
+
+def test_action_data_all_systems_option_fetches_without_solvent_prompts(monkeypatch, tmp_path):
+    output_csv = tmp_path / "custom" / "density_all.csv"
+    answers = iter(
+        [
+            "2",  # action: fetch data
+            "density",  # property
+            "0",  # system type: all compounds and mixtures
+            "none",  # temperature range
+            "none",  # pressure range
+            "",  # search filter: year
+            "",  # search filter: author
+            "",  # search filter: keyword
+            "10",  # max datasets
+            str(output_csv),  # output path
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers, ""))
+    calls = []
+
+    def fake_fetch(*a, **k):
+        calls.append((a, k))
+        return _fake_curated_df()
+
+    monkeypatch.setattr(
+        "qspr_il.data.cleaning.fetch_curated_dataset", fake_fetch)
+
+    rc = cli.main([])
+    assert rc == 0
+    assert output_csv.exists()
+    (property_query, solvent_name, solvent_name_2), kwargs = calls[0]
+    assert solvent_name is None
+    assert solvent_name_2 is None
+    assert kwargs["all_systems"] is True
+
+
 def test_action_data_reports_error_for_unmatched_property(monkeypatch, capsys):
     answers = iter(["2", "not-a-real-property", "",
                    "none", "none", "", "", "", "5", "out.csv"])

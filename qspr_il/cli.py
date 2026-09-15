@@ -203,12 +203,52 @@ def _prompt_property() -> str:
         print("Please enter a number or a property name.")
 
 
+def _system_label(solvent_name: str | None, solvent_name_2: str | None = None, all_systems: bool = False) -> str:
+    if all_systems:
+        return "all compounds and mixtures"
+    if solvent_name is None:
+        return "pure ionic liquid"
+    if solvent_name_2 is None:
+        return solvent_name
+    return f"{solvent_name} + {solvent_name_2}"
+
+
+def _system_slug(solvent_name: str | None, solvent_name_2: str | None = None, all_systems: bool = False) -> str:
+    if all_systems:
+        return "all"
+    if solvent_name is None:
+        return "pure"
+    if solvent_name_2 is None:
+        return solvent_name
+    return f"{solvent_name}_{solvent_name_2}"
+
+
+def _prompt_system() -> tuple[str | None, str | None, bool]:
+    print("\nSystem type:")
+    print("  0. All compounds and mixtures (pure, binary, and ternary together)")
+    print("  1. Pure compound (a pure ionic liquid)")
+    print("  2. Binary mixture (ionic liquid + one solvent)")
+    print("  3. Ternary mixture (ionic liquid + two solvents)")
+    print("  Solvents with reliable SMILES resolution: water, ethanol, isopropanol")
+    while True:
+        choice = _prompt("System type (0/1/2/3)", "1")
+        if choice == "0":
+            return None, None, True
+        if choice == "1":
+            return None, None, False
+        if choice == "2":
+            return _prompt("Solvent name", "") or None, None, False
+        if choice == "3":
+            solvent_name = _prompt("Solvent 1 name", "") or None
+            solvent_name_2 = _prompt("Solvent 2 name", "") or None
+            return solvent_name, solvent_name_2, False
+        print("Please enter 0, 1, 2, or 3.")
+
+
 def _prompt_data_settings() -> dict:
     property_query = _prompt_property()
 
-    print("\nSystem: name a solvent for a binary IL-solvent mixture, or leave blank for a pure ionic liquid.")
-    print("  Solvents with reliable SMILES resolution: water, ethanol, isopropanol")
-    solvent_name = _prompt("Solvent (blank = pure IL)", "") or None
+    solvent_name, solvent_name_2, all_systems = _prompt_system()
 
     temp_range = _prompt_range("Temperature (K)", DEFAULT_TEMP_RANGE)
     pressure_range = _prompt_range("Pressure (kPa)", DEFAULT_PRESSURE_RANGE)
@@ -223,12 +263,17 @@ def _prompt_data_settings() -> dict:
         "Max ILThermo datasets to download (blank = no limit)", "30")
     max_datasets = int(max_datasets_raw) if max_datasets_raw.strip() else None
 
-    default_output = f"datasets/custom/{property_query.replace(' ', '_')}_{solvent_name or 'pure'}.csv"
+    default_output = (
+        f"datasets/custom/{property_query.replace(' ', '_')}_"
+        f"{_system_slug(solvent_name, solvent_name_2, all_systems)}.csv"
+    )
     output_csv = _prompt("Save curated CSV to", default_output)
 
     return {
         "property_query": property_query,
         "solvent_name": solvent_name,
+        "solvent_name_2": solvent_name_2,
+        "all_systems": all_systems,
         "temp_range": temp_range,
         "pressure_range": pressure_range,
         "year": year,
@@ -239,24 +284,27 @@ def _prompt_data_settings() -> dict:
     }
 
 
-def _run_data_action() -> tuple[pd.DataFrame, str | None, str | None, str] | None:
+def _run_data_action() -> tuple[pd.DataFrame, str | None, str | None, str | None, bool, str] | None:
     """Interactively fetch + clean ILThermo data for any property and save it to disk.
 
-    Returns ``(curated_df, resolved_property_name, solvent_name, output_csv)`` on success
-    (``resolved_property_name`` is ``None`` if the fetch returned no rows), or ``None`` if the
-    fetch failed outright (e.g. the requested property matched nothing).
+    Returns ``(curated_df, resolved_property_name, solvent_name, solvent_name_2, all_systems,
+    output_csv)`` on success (``resolved_property_name`` is ``None`` if the fetch returned no
+    rows), or ``None`` if the fetch failed outright (e.g. the requested property matched
+    nothing).
     """
     from qspr_il.data.cleaning import fetch_curated_dataset
 
     settings = _prompt_data_settings()
     print(
         f"\nFetching '{settings['property_query']}' data from ILThermo "
-        f"({'pure ionic liquid' if settings['solvent_name'] is None else settings['solvent_name']})..."
+        f"({_system_label(settings['solvent_name'], settings['solvent_name_2'], settings['all_systems'])})..."
     )
     try:
         df = fetch_curated_dataset(
             settings["property_query"],
             settings["solvent_name"],
+            settings["solvent_name_2"],
+            all_systems=settings["all_systems"],
             max_datasets=settings["max_datasets"],
             year=settings["year"],
             author=settings["author"],
@@ -283,10 +331,19 @@ def _run_data_action() -> tuple[pd.DataFrame, str | None, str | None, str] | Non
         print(
             f"Saved {len(df)} curated rows ({resolved_property}) to {output_path}")
 
-    return df, resolved_property, settings["solvent_name"], settings["output_csv"]
+    return (
+        df, resolved_property, settings["solvent_name"], settings["solvent_name_2"],
+        settings["all_systems"], settings["output_csv"],
+    )
 
 
-def _offer_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: str | None) -> int:
+def _offer_auto_train(
+    df: pd.DataFrame,
+    resolved_property: str,
+    solvent_name: str | None,
+    solvent_name_2: str | None = None,
+    all_systems: bool = False,
+) -> int:
     """No trained model exists for this property -- offer to train a new one on the data
     just fetched, then optionally run it immediately.
     """
@@ -300,9 +357,10 @@ def _offer_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: st
 
     from qspr_il.models.training import train_ensemble
 
-    mole_fraction_col = None if solvent_name is None else "Mole_fraction_IL"
-    system_label = solvent_name or "pure"
-    default_dir = f"results/custom_models/{resolved_property.lower().replace(' ', '_')}_{system_label}_ensemble_model"
+    is_pure = solvent_name is None and not all_systems
+    mole_fraction_col = None if is_pure else "Mole_fraction_IL"
+    system_slug = _system_slug(solvent_name, solvent_name_2, all_systems)
+    default_dir = f"results/custom_models/{resolved_property.lower().replace(' ', '_')}_{system_slug}_ensemble_model"
     output_dir = _prompt("Save trained model to", default_dir)
     try:
         n_models = int(_prompt("Number of ensemble members to train", "5"))
@@ -311,7 +369,7 @@ def _offer_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: st
 
     print(
         f"\nTraining a new model for '{resolved_property}' "
-        f"({'pure ionic liquid' if solvent_name is None else solvent_name})..."
+        f"({_system_label(solvent_name, solvent_name_2, all_systems)})..."
     )
     try:
         _ensemble, metrics = train_ensemble(
@@ -347,15 +405,15 @@ def _offer_auto_train(df: pd.DataFrame, resolved_property: str, solvent_name: st
         key="custom",
         property_name=resolved_property,
         property_short="",
-        solvent=solvent_name or "pure ionic liquid",
-        is_pure=solvent_name is None,
+        solvent=_system_label(solvent_name, solvent_name_2, all_systems),
+        is_pure=is_pure,
         model_dir=Path(output_dir),
         target_column=resolved_property,
         description=f"Custom-trained model for '{resolved_property}'"
-        + (f" in {solvent_name}." if solvent_name else " (pure ionic liquid)."),
+        + (" (pure ionic liquid)." if is_pure else f" in {_system_label(solvent_name, solvent_name_2, all_systems)}."),
         default_mole_fraction_col=mole_fraction_col,
     )
-    default_output = f"results/{resolved_property.lower().replace(' ', '_')}_{system_label}_prediction.csv"
+    default_output = f"results/{resolved_property.lower().replace(' ', '_')}_{system_slug}_prediction.csv"
     output_csv = _prompt("Save predictions to", default_output)
     return _predict_and_save(df, spec, output_dir, "IL_SMILES", "Temperature (K)", mole_fraction_col, output_csv)
 
@@ -364,15 +422,15 @@ def _run_both_action() -> int:
     outcome = _run_data_action()
     if outcome is None:
         return 1
-    df, resolved_property, solvent_name, _output_csv = outcome
+    df, resolved_property, solvent_name, solvent_name_2, all_systems, _output_csv = outcome
     if df.empty or resolved_property is None:
         return 0
 
-    solvent_label = "pure ionic liquid" if solvent_name is None else solvent_name
+    solvent_label = _system_label(solvent_name, solvent_name_2, all_systems)
     try:
         spec = find_spec(resolved_property, solvent_label)
     except KeyError:
-        return _offer_auto_train(df, resolved_property, solvent_name)
+        return _offer_auto_train(df, resolved_property, solvent_name, solvent_name_2, all_systems)
 
     run_now = _prompt(
         f"\nRun the matching '{spec.label}' prediction model on this data now? [Y/n]", "Y")

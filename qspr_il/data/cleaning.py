@@ -117,6 +117,21 @@ GENERIC_PURE_COLUMNS = [
     "IL_ID", "IL_SMILES", "IL_name", "IL_cation_SMILES", "IL_anion_SMILES", "IL_component_number",
     "Record_ID", "Contains_Metal", "Standardized_IL_SMILES", "Changes", "Data_quality_flag",
 ]
+# Ternary systems (an ionic liquid plus two named solvents): same idea as
+# GENERIC_MIXTURE_COLUMNS, plus a second solvent's SMILES/name/id/MW and its own mole
+# fraction. "Mole_fraction_IL" and "Mole fraction of solvent" keep their binary meaning
+# (the IL's own share, and the *first* solvent's share); "Mole fraction of solvent 2" is the
+# second solvent's share -- the three always sum to 1.
+GENERIC_TERNARY_COLUMNS = [
+    "setid", "Temperature (K)", "Pressure (kPa)", "Property", "Property_value", "reference", "phases",
+    "Mole fraction", "Mole fraction of compound name", "Weight fraction", "Weight fraction of compound name",
+    "IL_SMILES", "IL_name", "IL_ID", "Solvent_SMILES", "Solvent_name", "Solvent_ID",
+    "Solvent2_SMILES", "Solvent2_name", "Solvent2_ID",
+    "IL_cation_SMILES", "IL_anion_SMILES", "IL_component_number",
+    "Mole fraction of solvent", "Mole fraction of solvent 2",
+    "Mole_fraction_IL", "IL_MW", "Solvent_MW", "Solvent2_MW", "Record_ID", "Contains_Metal",
+    "Standardized_IL_SMILES", "Changes", "Data_quality_flag",
+]
 
 
 def list_available_properties() -> list[str]:
@@ -329,17 +344,19 @@ def filter_conditions(
     pressure_range: tuple[float, float] | None = (90.0, 110.0),
     allow_missing_pressure: bool = True,
     temp_col: str = "Temperature (K)",
-    temp_range: tuple[float, float] = (253.0, 573.0),
+    temp_range: tuple[float, float] | None = (253.0, 573.0),
 ) -> pd.DataFrame:
     """Keep only rows within the given pressure/temperature ranges.
 
     ``pressure_range`` defaults to the project's documented near-atmospheric scope
     (90-110 kPa); pass ``None`` to skip pressure filtering entirely (useful for properties
     where pressure isn't a relevant condition, or when you want every pressure available).
-    Both ranges are parameters, not hardcoded constants, so callers can widen or narrow them
-    per property/solvent as needed.
+    ``temp_range`` works the same way -- ``None`` keeps every temperature. Both ranges are
+    parameters, not hardcoded constants, so callers can widen or narrow them per
+    property/solvent as needed.
     """
-    mask = df[temp_col].between(*temp_range)
+    mask = pd.Series(True, index=df.index) if temp_range is None else df[temp_col].between(
+        *temp_range)
     if pressure_range is not None and pressure_col in df.columns:
         pressure_mask = df[pressure_col].between(*pressure_range)
         if allow_missing_pressure:
@@ -418,47 +435,82 @@ def _resolve_component_smiles(name: str, id_based_smiles, cache: dict, use_pubch
     unambiguous-looking PubChem match can still be the wrong compound).
 
     ``cache`` is a caller-supplied dict reused across a whole :func:`build_curated_dataset`
-    call so each distinct compound name is only looked up once, no matter how many
-    measurement rows reference it.
+    call so each distinct compound name is only looked up (and, on the id-based path,
+    parse-attempted) once, no matter how many measurement rows reference it -- checked
+    *before* re-attempting the id-based SMILES, since re-parsing an already-known-unparseable
+    formula on every single row (rather than once per compound) is both wasted work and, for
+    an invalid SMILES, floods stderr with RDKit's own parse-error logging on every row.
     """
     text = str(
         id_based_smiles) if id_based_smiles == id_based_smiles else ""  # NaN-safe
+    key = str(name).strip().lower()
+    if key in cache:
+        return cache[key] or text
     if text and MolFromSmiles(text) is not None:
         return text
     if not use_pubchem_fallback:
+        cache[key] = None
         return text
-    key = str(name).strip().lower()
-    if key not in cache:
-        candidate = resolve_smiles_by_name(str(name))
-        if candidate and not formula_matches(candidate, text):
-            candidate = None
-        cache[key] = candidate
+    candidate = resolve_smiles_by_name(str(name))
+    if candidate and not formula_matches(candidate, text):
+        candidate = None
+    cache[key] = candidate
     return cache[key] or text
+
+
+def _resolve_solvent_component(component: dict, cache: dict, use_pubchem_fallback: bool) -> dict:
+    """Return ``component`` with its SMILES resolved, preferring the small, reliable
+    :data:`SOLVENT_SMILES_BY_NAME` table (see its module-level comment for why) before
+    falling back to the same id/PubChem resolution used for the IL side.
+    """
+    known_smiles = SOLVENT_SMILES_BY_NAME.get(
+        str(component["name"]).strip().lower())
+    if known_smiles:
+        return {**component, "smiles": known_smiles}
+    resolved = _resolve_component_smiles(
+        component["name"], component["smiles"], cache, use_pubchem_fallback)
+    return {**component, "smiles": resolved}
 
 
 def build_curated_dataset(
     raw_df: pd.DataFrame,
     property_name: str,
     solvent_name: str | None,
+    solvent_name_2: str | None = None,
     pressure_range: tuple[float, float] | None = (90.0, 110.0),
-    temp_range: tuple[float, float] = (253.0, 573.0),
+    temp_range: tuple[float, float] | None = (253.0, 573.0),
     property_range: tuple[float, float] | None = None,
     use_pubchem_fallback: bool = True,
+    all_systems: bool = False,
     progress_callback=None,
     progress_range: tuple[float, float] = (0.0, 1.0),
 ) -> pd.DataFrame:
     """Turn a raw, flattened+SMILES-joined ILThermo CSV (concatenated across idsets) into a
-    curated DataFrame with the generic :data:`GENERIC_MIXTURE_COLUMNS`/:data:`GENERIC_PURE_COLUMNS`
-    schema.
+    curated DataFrame with the generic :data:`GENERIC_MIXTURE_COLUMNS`/:data:`GENERIC_PURE_COLUMNS`/
+    :data:`GENERIC_TERNARY_COLUMNS` schema.
 
     ``raw_df`` is the concatenation of one or more CSVs produced by
     ``ionics.convert2csv`` + ``ionics.addSmiles``, all for the same property. ``property_name``
     is stored verbatim in the output's ``Property`` column (typically the resolved display
     name from :func:`resolve_property_display_name`). ``solvent_name`` is one of
-    :data:`KNOWN_SOLVENTS`, or ``None`` for a pure-IL dataset. ``use_pubchem_fallback`` controls
-    whether unresolved compound names are looked up on PubChem (see
-    :func:`resolve_smiles_by_name`); set to ``False`` to keep this fully offline (compounds that
-    the bundled ``keydata/smiles.csv`` table misses are then dropped, as before).
+    :data:`KNOWN_SOLVENTS`, or ``None`` for a pure-IL dataset. ``solvent_name_2``, if given
+    (only meaningful together with ``solvent_name``), makes this a ternary IL + solvent +
+    solvent dataset instead of a binary one -- each raw row's three components are matched to
+    the IL and the two named solvents by name, and the IL's own mole fraction is derived from
+    whichever two of the three mole fractions ILThermo reported (they always sum to 1).
+
+    ``all_systems=True`` fetches pure, binary, and ternary systems together in one batch
+    (``solvent_name``/``solvent_name_2`` are ignored in this mode). Since there's no single
+    solvent name to match against, each row's IL/solvent role is instead auto-detected: any
+    component whose name is in :data:`KNOWN_SOLVENTS` is a solvent, and the one remaining
+    component is the IL. A row is dropped if that doesn't resolve cleanly (zero or more than
+    one component left over once solvents are removed, more than two solvents, or a solvent
+    name outside :data:`KNOWN_SOLVENTS` -- role detection for those genuinely needs an explicit
+    ``solvent_name``, as noted in this module's "Known limitation" docs).
+
+    ``use_pubchem_fallback`` controls whether unresolved compound names are looked up on
+    PubChem (see :func:`resolve_smiles_by_name`); set to ``False`` to keep this fully offline
+    (compounds that the bundled ``keydata/smiles.csv`` table misses are then dropped, as before).
     ``progress_callback``, if given, is called with a one-line status string at each cleaning
     stage (standardization, filtering, deduplication) -- used by the CLI and Streamlit app to
     show what the cleaning step is actually doing.
@@ -470,7 +522,8 @@ def build_curated_dataset(
         scaled = None if fraction is None else lo + (hi - lo) * fraction
         _emit(progress_callback, message, scaled)
 
-    is_pure = solvent_name is None
+    is_pure = solvent_name is None and not all_systems
+    is_ternary = solvent_name is not None and solvent_name_2 is not None
     columns = raw_df.columns
 
     # NOTE: raw_df is typically the concatenation of several idsets, and ILThermo embeds the
@@ -517,6 +570,11 @@ def build_curated_dataset(
     rows = []
     skipped = 0
     smiles_cache: dict[str, str | None] = {}
+    # The same IL typically appears in hundreds of rows, and RDKit standardization is not
+    # cheap -- so derive each distinct structure's fields once. This also means an
+    # unparseable structure (one neither the keydata table nor PubChem could resolve) is
+    # only attempted, and only logged by RDKit, once per compound rather than once per row.
+    molecular_fields_cache: dict[str, dict] = {}
     report_every = max(1, n_raw // 50)
     for raw_i, (_, row) in enumerate(raw_df.iterrows(), start=1):
         if raw_i % report_every == 0 or raw_i == n_raw:
@@ -546,17 +604,70 @@ def build_curated_dataset(
             )
             if name_col not in row or smiles_col not in row:
                 continue
+            if pd.isna(row[name_col]) or pd.isna(row[smiles_col]):
+                continue  # this idset's own component slot -- NaN in an all_systems batch
             components.append(
                 {"idx": idx, "name": row[name_col], "smiles": row[smiles_col], "idout": row.get(
                     idout_col, "")}
             )
 
-        if is_pure:
+        if all_systems:
+            if len(components) == 1:
+                il_component = components[0]
+                solvent_component = None
+                solvent2_component = None
+            elif len(components) in (2, 3):
+                expected_solvents = len(components) - 1
+                solvent_candidates = [
+                    c for c in components if str(c["name"]).strip().lower() in KNOWN_SOLVENTS]
+                il_candidates = [
+                    c for c in components if str(c["name"]).strip().lower() not in KNOWN_SOLVENTS]
+                if len(solvent_candidates) != expected_solvents or len(il_candidates) != 1:
+                    skipped += 1
+                    continue  # can't auto-detect roles: see KNOWN_SOLVENTS limitation in the docstring
+                il_component = il_candidates[0]
+                solvent_component = _resolve_solvent_component(
+                    solvent_candidates[0], smiles_cache, use_pubchem_fallback)
+                solvent2_component = (
+                    _resolve_solvent_component(
+                        solvent_candidates[1], smiles_cache, use_pubchem_fallback)
+                    if expected_solvents == 2 else None
+                )
+            else:
+                skipped += 1
+                continue  # 0 or >3 usable components: not a system this pipeline models
+        elif is_pure:
             if len(components) != 1:
                 skipped += 1
                 continue
             il_component = components[0]
             solvent_component = None
+            solvent2_component = None
+        elif is_ternary:
+            if len(components) != 3:
+                skipped += 1
+                continue
+            solvent_component = next(
+                (c for c in components if str(c["name"]).strip(
+                ).lower() == solvent_name.lower()), None
+            )
+            solvent2_component = next(
+                (c for c in components
+                 if c is not solvent_component and str(c["name"]).strip().lower() == solvent_name_2.lower()),
+                None,
+            )
+            il_component = next(
+                (c for c in components if c is not solvent_component and c is not solvent2_component), None
+            )
+            if solvent_component is None or solvent2_component is None or il_component is None:
+                skipped += 1
+                continue  # couldn't match this row's three components to IL + both named solvents
+            # See SOLVENT_SMILES_BY_NAME's module-level comment for why solvents are resolved
+            # by name rather than trusting addSmiles's id-based lookup.
+            solvent_component = _resolve_solvent_component(
+                solvent_component, smiles_cache, use_pubchem_fallback)
+            solvent2_component = _resolve_solvent_component(
+                solvent2_component, smiles_cache, use_pubchem_fallback)
         else:
             solvent_component = next(
                 (c for c in components if str(c["name"]).strip(
@@ -567,27 +678,22 @@ def build_curated_dataset(
             if solvent_component is None or il_component is None:
                 skipped += 1
                 continue
+            solvent2_component = None
             # Resolve the solvent's SMILES by name (see SOLVENT_SMILES_BY_NAME) rather than
             # trusting addSmiles's id-based lookup, which was found to miss known solvents
             # when ILThermo's live component id doesn't match the bundled keydata table's id
             # for that same compound. For solvents outside that small known set, fall back to
             # the same PubChem name resolution used for the IL side.
-            known_solvent_smiles = SOLVENT_SMILES_BY_NAME.get(
-                str(solvent_component["name"]).strip().lower())
-            if known_solvent_smiles:
-                solvent_component = {**solvent_component,
-                                     "smiles": known_solvent_smiles}
-            else:
-                resolved_solvent_smiles = _resolve_component_smiles(
-                    solvent_component["name"], solvent_component["smiles"], smiles_cache, use_pubchem_fallback
-                )
-                solvent_component = {**solvent_component,
-                                     "smiles": resolved_solvent_smiles}
+            solvent_component = _resolve_solvent_component(
+                solvent_component, smiles_cache, use_pubchem_fallback)
 
         il_smiles = _resolve_component_smiles(
             il_component["name"], il_component["smiles"], smiles_cache, use_pubchem_fallback
         )
-        molecular_fields = compute_molecular_fields(il_smiles)
+        if il_smiles not in molecular_fields_cache:
+            molecular_fields_cache[il_smiles] = compute_molecular_fields(
+                il_smiles)
+        molecular_fields = molecular_fields_cache[il_smiles]
         if molecular_fields["Changes"] == "Invalid SMILES":
             skipped += 1
             continue  # unparseable SMILES: neither the bundled keydata table nor PubChem resolved it
@@ -606,7 +712,62 @@ def build_curated_dataset(
             **molecular_fields,
         }
 
-        if not is_pure:
+        if solvent_component is not None and solvent2_component is not None:
+            # Ternary composition (whether solvent_name/solvent_name_2 were given explicitly or
+            # auto-detected via all_systems). ILThermo ternary datasets report mole fractions for
+            # (at least) two of the three components independently, each under its own "Mole
+            # fraction of <name>" column; collect whichever are populated on this row, keyed by
+            # component name, so the third (whichever it is) can be derived from the constraint
+            # that all three sum to 1.
+            mole_fraction_by_name: dict[str, float] = {}
+            for col in mole_fraction_cols:
+                val = row.get(col)
+                if pd.notna(val):
+                    name = re.sub(r"^Mole fraction of ", "",
+                                  col, flags=re.IGNORECASE).strip().lower()
+                    mole_fraction_by_name[name] = _parse_numeric(val)
+
+            fractions = {
+                "solvent1": mole_fraction_by_name.get(str(solvent_component["name"]).strip().lower()),
+                "solvent2": mole_fraction_by_name.get(str(solvent2_component["name"]).strip().lower()),
+                "il": mole_fraction_by_name.get(str(il_component["name"]).strip().lower()),
+            }
+            missing = [k for k, v in fractions.items() if v is None or v != v]
+            if len(missing) == 1:
+                total_known = sum(v for v in fractions.values()
+                                   if v is not None and v == v)
+                fractions[missing[0]] = 1.0 - total_known
+            solvent1_fraction, solvent2_fraction, il_fraction = (
+                fractions["solvent1"], fractions["solvent2"], fractions["il"])
+            if (
+                solvent1_fraction is None or solvent1_fraction != solvent1_fraction
+                or solvent2_fraction is None or solvent2_fraction != solvent2_fraction
+            ):
+                skipped += 1
+                continue  # fewer than two independent compositions reported: can't place this row
+            if il_fraction is None or il_fraction != il_fraction:
+                il_fraction = 1.0 - solvent1_fraction - solvent2_fraction
+
+            solvent_mw_mol = MolFromSmiles(solvent_component["smiles"])
+            solvent2_mw_mol = MolFromSmiles(solvent2_component["smiles"])
+            record.update(
+                {
+                    "Solvent_ID": solvent_component["idout"],
+                    "Solvent_SMILES": solvent_component["smiles"],
+                    "Solvent_name": solvent_component["name"],
+                    "Solvent_MW": Descriptors.MolWt(solvent_mw_mol) if solvent_mw_mol is not None else np.nan,
+                    "Solvent2_ID": solvent2_component["idout"],
+                    "Solvent2_SMILES": solvent2_component["smiles"],
+                    "Solvent2_name": solvent2_component["name"],
+                    "Solvent2_MW": Descriptors.MolWt(solvent2_mw_mol) if solvent2_mw_mol is not None else np.nan,
+                    "Mole fraction of solvent": solvent1_fraction,
+                    "Mole fraction of solvent 2": solvent2_fraction,
+                    # The IL's own mole fraction -- what the trained models expect (matches this
+                    # project's established "Mole_fraction_IL" convention).
+                    "Mole_fraction_IL": il_fraction,
+                }
+            )
+        elif solvent_component is not None:
             fraction_value = _parse_numeric(
                 row.get(mole_fraction_col)) if mole_fraction_col else np.nan
             fraction_component_name = (
@@ -626,7 +787,10 @@ def build_curated_dataset(
                     "Weight fraction of compound name": np.nan,
                 }
             )
-            if fraction_component_name.strip().lower() == solvent_name.lower() and fraction_value == fraction_value:
+            if (
+                fraction_component_name.strip().lower() == str(solvent_component["name"]).strip().lower()
+                and fraction_value == fraction_value
+            ):
                 mole_fraction_of_solvent = fraction_value
             elif fraction_value == fraction_value:
                 mole_fraction_of_solvent = 1.0 - fraction_value
@@ -643,7 +807,16 @@ def build_curated_dataset(
 
         rows.append(record)
 
-    target_columns = GENERIC_PURE_COLUMNS if is_pure else GENERIC_MIXTURE_COLUMNS
+    if all_systems:
+        # Rows in this batch can be pure, binary, or ternary -- the ternary schema is the
+        # superset that fits all three (missing fields just come out NaN for simpler rows).
+        target_columns = GENERIC_TERNARY_COLUMNS
+    elif is_pure:
+        target_columns = GENERIC_PURE_COLUMNS
+    elif is_ternary:
+        target_columns = GENERIC_TERNARY_COLUMNS
+    else:
+        target_columns = GENERIC_MIXTURE_COLUMNS
     dropped_unresolvable = len(raw_df) - len(rows)
     _report(
         f"Step 5/5 · Standardized {len(rows)} of {len(raw_df)} raw rows"
@@ -657,14 +830,31 @@ def build_curated_dataset(
         _report("Step 5/5 · No rows remained after standardization -- nothing to clean.", 1.0)
         return pd.DataFrame(columns=target_columns)
 
+    # Fill in any target column no row in this particular batch happened to set (e.g. an
+    # all_systems batch with no ternary rows at all never populates "Solvent2_name") *before*
+    # anything below references those columns by name -- not just at the final reindex.
+    for col in target_columns:
+        if col not in curated.columns:
+            curated[col] = np.nan
+
     curated["Record_ID"] = [f"{r['setid']}_{i}" for i, r in enumerate(rows)]
 
     before_conditions = len(curated)
+    # Every range is optional (None = no limit on that condition), so build the description
+    # from whichever limits are actually set rather than assuming a temperature range exists.
+    active_ranges = [
+        label
+        for label, rng in (
+            ("temperature {0:g}-{1:g} K", temp_range),
+            ("pressure {0:g}-{1:g} kPa", pressure_range),
+            ("property value {0:g}-{1:g}", property_range),
+        )
+        if rng
+        for label in [label.format(*rng)]
+    ]
     _report(
-        "Step 5/5 · Applying condition filters (temperature "
-        f"{temp_range[0]:g}-{temp_range[1]:g} K"
-        + (f", pressure {pressure_range[0]:g}-{pressure_range[1]:g} kPa" if pressure_range else "")
-        + (f", property value {property_range[0]:g}-{property_range[1]:g}" if property_range else "")
+        "Step 5/5 · Applying condition filters ("
+        + (", ".join(active_ranges) if active_ranges else "no limits set -- keeping every row")
         + ")...",
         0.9,
     )
@@ -679,8 +869,14 @@ def build_curated_dataset(
         0.94,
     )
 
-    key_cols = ["IL_SMILES", "Temperature (K)"] if is_pure else [
-        "IL_SMILES", "Solvent_name", "Temperature (K)"]
+    if all_systems:
+        key_cols = ["IL_SMILES", "Solvent_name", "Solvent2_name", "Temperature (K)"]
+    elif is_pure:
+        key_cols = ["IL_SMILES", "Temperature (K)"]
+    elif is_ternary:
+        key_cols = ["IL_SMILES", "Solvent_name", "Solvent2_name", "Temperature (K)"]
+    else:
+        key_cols = ["IL_SMILES", "Solvent_name", "Temperature (K)"]
     curated["Data_quality_flag"] = flag_duplicates(
         curated, key_cols, "Property_value")
     duplicate_count = int(
@@ -695,15 +891,14 @@ def build_curated_dataset(
         1.0,
     )
 
-    for col in target_columns:
-        if col not in curated.columns:
-            curated[col] = np.nan
     return curated.reindex(columns=target_columns).reset_index(drop=True)
 
 
 def fetch_curated_dataset(
     property_query: str,
     solvent_name: str | None,
+    solvent_name_2: str | None = None,
+    all_systems: bool = False,
     data_root=None,
     max_datasets: int | None = None,
     year: str = "",
@@ -712,12 +907,16 @@ def fetch_curated_dataset(
     progress_callback=None,
     **filter_kwargs,
 ) -> pd.DataFrame:
-    """Download, flatten, SMILES-join, and clean ILThermo data for one property/solvent combo.
+    """Download, flatten, SMILES-join, and clean ILThermo data for one property/system combo.
 
     This is the single high-level function a user calls to (re)generate a curated dataset for
-    *any* ILThermo property, e.g. ``fetch_curated_dataset("density", "ethanol")`` or
-    ``fetch_curated_dataset("viscosity", None)`` for a pure-IL viscosity dataset.
-    ``property_query`` can be either the hyphenated short name from
+    *any* ILThermo property, e.g. ``fetch_curated_dataset("density", "ethanol")`` for a binary
+    IL + ethanol dataset, ``fetch_curated_dataset("density", "ethanol", "water")`` for a
+    ternary IL + ethanol + water dataset, ``fetch_curated_dataset("viscosity", None)`` for a
+    pure-IL viscosity dataset, or ``fetch_curated_dataset("density", None, all_systems=True)``
+    for every pure/binary/ternary system ILThermo has for that property in one batch (see
+    :func:`build_curated_dataset`'s ``all_systems`` docs for how component roles are then
+    auto-detected). ``property_query`` can be either the hyphenated short name from
     :func:`list_available_properties` (e.g. ``"refractive-index"``) or ILThermo's own display
     name (e.g. ``"Refractive index"``) -- it's resolved against the live search results via
     :func:`resolve_property_display_name`. Raises :class:`ValueError` if nothing matches.
@@ -738,7 +937,8 @@ def fetch_curated_dataset(
     def _report(message: str, fraction: float | None = None) -> None:
         _emit(progress_callback, message, fraction)
 
-    ncmp = "1" if solvent_name is None else "2"
+    is_ternary = solvent_name is not None and solvent_name_2 is not None
+    ncmp = "1" if solvent_name is None else ("3" if is_ternary else "2")
     data_root_path = ionics_client.get_data_dir(data_root)
 
     active_filters = [
@@ -746,7 +946,14 @@ def fetch_curated_dataset(
         for label, value in (("year", year), ("author", author), ("keyword", keyword))
         if value
     ]
-    system_desc = "pure ionic liquids" if solvent_name is None else f"ionic liquid + {solvent_name} mixtures"
+    if all_systems:
+        system_desc = "all compounds and mixtures (pure, binary, and ternary)"
+    elif solvent_name is None:
+        system_desc = "pure ionic liquids"
+    elif is_ternary:
+        system_desc = f"ionic liquid + {solvent_name} + {solvent_name_2} ternary mixtures"
+    else:
+        system_desc = f"ionic liquid + {solvent_name} mixtures"
     _report(
         f"Step 1/5 · Querying the ILThermo `ilsearch` catalogue for '{property_query}' "
         f"measurements of {system_desc}"
@@ -754,9 +961,22 @@ def fetch_curated_dataset(
         + ". This returns only dataset metadata, not the measurements themselves.",
         0.0,
     )
-    idsets_path = ionics_client.getIdsets(
-        prop=None, ncmp=ncmp, year=year, auth=author, keyw=keyword, data_root=data_root_path)
-    idsets_json = json.load(open(idsets_path))
+    if all_systems:
+        # The live ILThermo API rejects a search with no criteria at all (confirmed
+        # empirically: ncmp=0 alone -- "any component count" -- errors with "no search
+        # parameters provided" instead of actually searching everything), so "all systems"
+        # is implemented as three separate, genuinely-restricted searches (pure/binary/
+        # ternary) merged together, rather than a single ncmp=0 request.
+        combined_res = []
+        for sub_ncmp in ("1", "2", "3"):
+            sub_path = ionics_client.getIdsets(
+                prop=None, ncmp=sub_ncmp, year=year, auth=author, keyw=keyword, data_root=data_root_path)
+            combined_res.extend(json.load(open(sub_path)).get("res", []))
+        idsets_json = {"res": combined_res}
+    else:
+        idsets_path = ionics_client.getIdsets(
+            prop=None, ncmp=ncmp, year=year, auth=author, keyw=keyword, data_root=data_root_path)
+        idsets_json = json.load(open(idsets_path))
     display_name = resolve_property_display_name(idsets_json, property_query)
     if display_name is None:
         available = sorted({row[2]
@@ -781,7 +1001,15 @@ def fetch_curated_dataset(
 
     safe_property = re.sub(r"[^a-zA-Z0-9]+", "_",
                            display_name.strip().lower()).strip("_")
-    folder_name = f"{safe_property}_{'pure' if solvent_name is None else solvent_name}_data"
+    if all_systems:
+        system_slug = "all"
+    elif solvent_name is None:
+        system_slug = "pure"
+    elif is_ternary:
+        system_slug = f"{solvent_name}_{solvent_name_2}"
+    else:
+        system_slug = solvent_name
+    folder_name = f"{safe_property}_{system_slug}_data"
 
     n_sets = len(matching)
 
@@ -820,7 +1048,12 @@ def fetch_curated_dataset(
         "*.csv")] if smiles_dir.exists() else []
     if not frames:
         _report("No data files were produced by the download/convert step.", 1.0)
-        target_columns = GENERIC_PURE_COLUMNS if solvent_name is None else GENERIC_MIXTURE_COLUMNS
+        if all_systems or is_ternary:
+            target_columns = GENERIC_TERNARY_COLUMNS
+        elif solvent_name is None:
+            target_columns = GENERIC_PURE_COLUMNS
+        else:
+            target_columns = GENERIC_MIXTURE_COLUMNS
         return pd.DataFrame(columns=target_columns)
 
     raw_df = pd.concat(frames, ignore_index=True)
@@ -830,5 +1063,5 @@ def fetch_curated_dataset(
         0.6,
     )
     return build_curated_dataset(
-        raw_df, display_name, solvent_name, progress_callback=progress_callback,
-        progress_range=(0.6, 1.0), **filter_kwargs)
+        raw_df, display_name, solvent_name, solvent_name_2, all_systems=all_systems,
+        progress_callback=progress_callback, progress_range=(0.6, 1.0), **filter_kwargs)

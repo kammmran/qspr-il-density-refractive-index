@@ -99,7 +99,15 @@ def getIdsets(
     keyw="",
     data_root=None,
 ) -> Path:
-    """Search ILThermo for matching dataset ids and save the raw JSON response."""
+    """Search ILThermo for matching dataset ids and save the raw JSON response.
+
+    Note: the live API rejects a search with no real criteria at all -- confirmed
+    empirically, ``ncmp="0"`` ("any component count") alone does *not* mean "search
+    everything"; the server responds with an ``errors: ["no search parameters provided"]``
+    payload instead of actual results. A genuine "every component count" search therefore
+    has to be built by querying ``ncmp="1"``/``"2"``/``"3"`` separately and merging the
+    results (see :func:`qspr_il.data.cleaning.fetch_curated_dataset`'s ``all_systems`` mode).
+    """
     prop = prop or ""
     if not prop and not any([cmp, ncmp != "0", year, auth, keyw]):
         raise ValueError(

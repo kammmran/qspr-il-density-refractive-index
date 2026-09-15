@@ -18,6 +18,16 @@ def test_getidsets_unknown_property_raises(tmp_path, mock_ilthermo_responses):
         client.getIdsets(prop="not_a_real_property", data_root=tmp_path)
 
 
+def test_getidsets_rejects_fully_unfiltered_search(tmp_path):
+    import pytest
+
+    # ncmp="0" (the default) means "any component count" to the live API -- indistinguishable
+    # here from just not having set it -- so with no prop/cmp/year/auth/keyw either, this would
+    # be a totally unrestricted "fetch everything" call and must be rejected.
+    with pytest.raises(ValueError, match="At least one parameter"):
+        client.getIdsets(data_root=tmp_path)
+
+
 def test_getdata_downloads_each_set_under_data_root(tmp_path, mock_ilthermo_responses):
     idset_dir = client.getData(prop="dens", ncmp="1", data_root=tmp_path)
     files = list(idset_dir.glob("idset_*.json"))
