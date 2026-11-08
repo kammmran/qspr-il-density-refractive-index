@@ -235,3 +235,10 @@ The test suite runs fully offline (no network calls, no multi-megabyte model fil
 If you use this work, please cite:
 
 `Manuscript in preparation`
+## Data on Hugging Face
+
+The `data` folder is not stored in git. It was pushed to the private Hugging Face dataset [narmak28/qspr-il-density-refractive-index-data](https://huggingface.co/datasets/narmak28/qspr-il-density-refractive-index-data) on 2026-11-08. To restore it, run this from the project root:
+
+```
+hf download narmak28/qspr-il-density-refractive-index-data --repo-type dataset --local-dir .
+```
