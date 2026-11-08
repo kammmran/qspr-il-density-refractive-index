@@ -99,19 +99,47 @@ def standardize_molecule(smi: str) -> tuple[str, str]:
     return standardized_smi, change_summary
 
 
+@lru_cache(maxsize=8192)
+def component_formal_charge(part: str) -> int:
+    """Net formal charge of one single-component SMILES string (0 if it can't be parsed).
+
+    Used to tell an IL's cation from its anion. Reading the charge off the parsed molecule
+    rather than pattern-matching the text avoids two failure modes of a bare ``+``/``-``
+    search: a ``-`` written as an explicit single bond (``C-C``) is not an anion, and a
+    multiply-charged fragment (``[Fe+2]``) is not special-cased. The bracket-anchored regex
+    is only a fallback for fragments RDKit can't parse at all.
+    """
+    mol = Chem.MolFromSmiles(part)
+    if mol is not None:
+        return Chem.GetFormalCharge(mol)
+    if re.search(r"\+\d*\]", part):
+        return 1
+    if re.search(r"-\d*\]", part):
+        return -1
+    return 0
+
+
 def reorder_charged_species(df: pd.DataFrame, smiles_col: str = "Standardized_IL_SMILES") -> pd.DataFrame:
-    """Reorder each multi-component SMILES so cations come before anions."""
+    """Reorder each multi-component SMILES so cations come first, then anions, then neutrals.
+
+    Neutral components -- a co-solvent, water of hydration, or a wholly neutral molecule
+    handed in as the "IL" -- are kept (in their original relative order) rather than dropped.
+    Dropping them used to turn an input such as ``"CCO"`` into an empty string and
+    ``"O.[Na+].[Cl-]"`` into ``"[Na+].[Cl-]"``, which then yielded all-NaN descriptors and a
+    meaningless prediction. Single-component values (including the original text of an
+    unparseable SMILES) are passed through untouched.
+    """
 
     def reorder_smiles(smi):
-        parts = smi.split(".")
-        cations = []
-        anions = []
+        text = str(smi)
+        parts = [p for p in text.split(".") if p]
+        if len(parts) < 2:
+            return text
+        cations, anions, neutrals = [], [], []
         for part in parts:
-            if re.search(r"\+[0-9]*", part):
-                cations.append(part)
-            elif re.search(r"\-[0-9]*", part):
-                anions.append(part)
-        return ".".join(cations + anions)
+            charge = component_formal_charge(part)
+            (cations if charge > 0 else anions if charge < 0 else neutrals).append(part)
+        return ".".join(cations + anions + neutrals)
 
     df[smiles_col] = df[smiles_col].apply(reorder_smiles)
     return df
@@ -284,7 +312,7 @@ def prepare_input(
     data = reorder_charged_species(data, smiles_col="Standardized_IL_SMILES")
     invalid_count = sum(1 for c in changes if c == "Invalid SMILES")
     _report(
-        f"Standardization complete"
+        "Standardization complete"
         + (f" ({invalid_count} of {n} SMILES could not be parsed)" if invalid_count else "")
         + ".",
         0.5,
@@ -300,10 +328,16 @@ def prepare_input(
 
     if temp_col is None or temp_col not in data.columns:
         data["Temperature"] = default_temp
-    elif data[temp_col].isna().any():
-        data["Temperature"] = data[temp_col].fillna(default_temp)
     else:
-        data.rename(columns={temp_col: "Temperature"}, inplace=True)
+        # Always consume the source column the same way, whatever it contains. Renaming it
+        # when every value was present but keeping *both* columns when any value was missing
+        # made the output schema depend on the data. Non-numeric cells fall back to the same
+        # default as a missing one, matching "leave the temperature column empty for 298.15 K".
+        temperature = pd.to_numeric(
+            data[temp_col], errors="coerce").fillna(default_temp)
+        if temp_col != "Temperature":
+            data = data.drop(columns=[temp_col])
+        data["Temperature"] = temperature
 
     return data
 
@@ -355,9 +389,17 @@ def predict(
         all_smiles_list, union_descriptors)
     col_of = {name: j for j, name in enumerate(union_names)}
 
-    temperature_array = data[temp_col].values.reshape(-1, 1)
+    # Coerce to float rather than passing the column through as-is: a CSV with a stray
+    # non-numeric cell (a unit string, "n/a") makes the whole column object dtype, which an
+    # estimator rejects outright -- failing *every* ensemble member and leaving the entire
+    # run NaN. Coercing turns that into a NaN for the one bad row, which the gradient-boosted
+    # models handle natively, and leaves every other row predictable.
+    temperature_array = pd.to_numeric(
+        data[temp_col], errors="coerce").to_numpy(dtype=float).reshape(-1, 1)
     mole_fraction_array = (
-        data[mole_fraction_col].values.reshape(-1, 1) if mole_fraction_col is not None else None
+        pd.to_numeric(data[mole_fraction_col], errors="coerce").to_numpy(dtype=float).reshape(-1, 1)
+        if mole_fraction_col is not None
+        else None
     )
 
     for i, (model, metadata) in enumerate(zip(ensemble.models, ensemble.metadata), 1):
@@ -369,18 +411,21 @@ def predict(
             if mole_fraction_array is not None:
                 feature_arrays.append(mole_fraction_array)
             preds = model.predict(np.hstack(feature_arrays))
-            predictions.append(pd.Series(preds))
+            predictions.append(np.asarray(preds, dtype=float).ravel())
         except Exception as e:
             print(f"Error processing Model {i}: {e}")
             _report(
                 f"Model {i}/{n_models}: prediction failed ({e}) -- recorded as NaN.")
-            predictions.append(pd.Series([np.nan] * len(all_smiles_list)))
+            predictions.append(np.full(len(all_smiles_list), np.nan))
 
     _report("Combining ensemble predictions into a consensus mean ± standard deviation...", 1.0)
-    data["prediction_mean"] = pd.concat(
-        predictions, axis=1).mean(axis=1).round(2)
-    data["prediction_std"] = pd.concat(
-        predictions, axis=1).std(axis=1).round(2)
+    # Assign positionally (``.to_numpy()``), not as a Series: the per-member predictions are
+    # in row order with a fresh 0..n-1 index, so letting pandas align them against ``data``'s
+    # own index silently produced an all-NaN result for any input whose index isn't a plain
+    # 0..n-1 range (e.g. a caller's filtered DataFrame).
+    member_frame = pd.DataFrame(np.column_stack(predictions))
+    data["prediction_mean"] = member_frame.mean(axis=1).round(2).to_numpy()
+    data["prediction_std"] = member_frame.std(axis=1).round(2).to_numpy()
     return data
 
 

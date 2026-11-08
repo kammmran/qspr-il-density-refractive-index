@@ -1,5 +1,3 @@
-import json
-
 from qspr_il.data.ionics import client
 
 

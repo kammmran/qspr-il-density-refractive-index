@@ -210,3 +210,76 @@ def test_predict_reports_progress_on_model_failure(fake_ensemble_dir, sample_pre
     predict(prepared, ensemble, mole_fraction_col="Mole_fraction",
             progress_callback=messages.append)
     assert any("Model 3/5: prediction failed" in m for m in messages)
+
+
+def test_reorder_charged_species_keeps_neutral_components():
+    # Regression: components with no formal charge used to be dropped entirely, so a neutral
+    # input collapsed to an empty string and a hydrate lost its water -- both of which then
+    # produced all-NaN descriptors and a meaningless prediction.
+    df = pd.DataFrame(
+        {"Standardized_IL_SMILES": ["CCO", "O.[Na+].[Cl-]", "CCO.C[N+](C)(C)C.[Cl-]"]})
+    result = reorder_charged_species(df)["Standardized_IL_SMILES"].tolist()
+    assert result == ["CCO", "[Na+].[Cl-].O", "C[N+](C)(C)C.[Cl-].CCO"]
+
+
+def test_reorder_charged_species_passes_through_unparseable_smiles():
+    # standardize_molecule returns an invalid SMILES unchanged; reordering must not mangle it
+    # into an empty string on the way through.
+    df = pd.DataFrame({"Standardized_IL_SMILES": ["not a smiles"]})
+    assert reorder_charged_species(
+        df).loc[0, "Standardized_IL_SMILES"] == "not a smiles"
+
+
+def test_reorder_charged_species_handles_multiply_charged_cation():
+    df = pd.DataFrame({"Standardized_IL_SMILES": ["[Cl-].[Cl-].[Fe+2]"]})
+    assert reorder_charged_species(
+        df).loc[0, "Standardized_IL_SMILES"] == "[Fe+2].[Cl-].[Cl-]"
+
+
+class _ConstantModel:
+    def __init__(self, value):
+        self.value = value
+
+    def predict(self, X):
+        return np.full(len(X), self.value, dtype=float)
+
+
+def _two_member_ensemble():
+    from qspr_il.models.engine import LoadedEnsemble
+
+    return LoadedEnsemble(
+        models=[_ConstantModel(1.0), _ConstantModel(3.0)],
+        metadata=[{"descriptors": ["nAtom"]}, {"descriptors": ["nAtom"]}],
+    )
+
+
+def test_predict_does_not_align_on_the_input_index():
+    # Regression: the per-member predictions carry a fresh 0..n-1 index, so assigning them as
+    # Series let pandas align them against the caller's index -- any input whose index isn't a
+    # plain range (e.g. a filtered DataFrame) came back entirely NaN.
+    data = pd.DataFrame(
+        {
+            "Standardized_IL_SMILES": ["CCO", "CCO", "CCO"],
+            "Temperature": [298.15, 300.0, 310.0],
+            "Mole_fraction": [0.5, 0.5, 0.5],
+        },
+        index=[10, 11, 12],
+    )
+    result = predict(data, _two_member_ensemble())
+    assert result["prediction_mean"].tolist() == [2.0, 2.0, 2.0]
+    assert not result["prediction_std"].isna().any()
+
+
+def test_predict_coerces_non_numeric_conditions_instead_of_failing_every_member():
+    # One unparseable cell used to make the whole column object dtype, which the estimator
+    # rejects -- failing every ensemble member and leaving the entire run NaN. Only the bad
+    # row should be affected now.
+    data = pd.DataFrame(
+        {
+            "Standardized_IL_SMILES": ["CCO", "CCO"],
+            "Temperature": ["298.15", "n/a"],
+            "Mole_fraction": [0.5, 0.5],
+        }
+    )
+    result = predict(data, _two_member_ensemble())
+    assert result["prediction_mean"].tolist() == [2.0, 2.0]

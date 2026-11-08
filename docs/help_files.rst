@@ -36,14 +36,29 @@ which prints::
                             Name of the mole fraction column (mixture models only).
      --temp_col TEMP_COL   Name of the temperature column.
      --model_dir MODEL_DIR
-                            Directory containing the ensemble of models and metadata.
+                            Directory containing the ensemble of models and
+                            metadata. Use it on its own (without --model) to run
+                            a custom-trained ensemble; it is then treated as a
+                            pure-IL model unless --mole_fraction_col is also
+                            given.
      --output_csv OUTPUT_CSV
                             Path to save the output CSV with predictions.
 
-If ``--action`` is omitted and no ``--model`` is given either, you are asked
-interactively whether to run a prediction model, fetch & clean data (for any
-ILThermo property -- see :doc:`data_pipeline`), or both. Passing ``--model``
-(as in the example below) skips that prompt and goes straight to prediction.
+If ``--action`` is omitted and no prediction option is given either, you are
+asked interactively whether to run a prediction model, fetch & clean data (for
+any ILThermo property -- see :doc:`data_pipeline`), or both. Passing any of
+``--model``, ``--model_dir``, ``--input_csv``, ``--smiles_col`` or
+``--mole_fraction_col`` (as in the example below) skips that prompt and goes
+straight to prediction.
+
+To run an ensemble you trained yourself (see :doc:`training`), point
+``--model_dir`` at its directory and leave ``--model`` off -- there is no
+registry entry to look up, so the model is described by the options you pass::
+
+   qspr-il-predict --model_dir results/custom_models/viscosity_pure_ensemble_model \
+       --input_csv datasets/custom/viscosity_pure.csv \
+       --smiles_col IL_SMILES --temp_col "Temperature (K)" \
+       --output_csv results/viscosity_pure_prediction.csv
 
 Model numbers
 -------------

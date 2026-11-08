@@ -196,7 +196,9 @@ def _render_report(result: pd.DataFrame, spec: ModelSpec) -> None:
 
     top_uncertain = result.loc[valid].sort_values(
         "prediction_std", ascending=False).head(5)
-    with st.expander(f"5 highest-uncertainty predictions (std > {high_uncertainty_threshold:.2f})"):
+    threshold_label = (
+        f" (std > {high_uncertainty_threshold:.2f})" if pd.notna(high_uncertainty_threshold) else "")
+    with st.expander(f"5 highest-uncertainty predictions{threshold_label}"):
         _show_df(top_uncertain)
 
     if invalid_smiles.any():
@@ -452,7 +454,7 @@ def _render_auto_train(
         "**Validation metrics** (group k-fold by IL SMILES, not this project's original tuning methodology)")
     _show_df(pd.DataFrame(metrics))
 
-    if st.button(f"Run this newly trained model on the fetched data", type="primary"):
+    if st.button("Run this newly trained model on the fetched data", type="primary"):
         result = _run_prediction_with_status(
             df, spec, ensemble, "IL_SMILES", "Temperature (K)", mole_fraction_col, "Running newly trained model..."
         )
@@ -689,9 +691,12 @@ def _run_single_entry_mode(spec: ModelSpec) -> None:
 
         mean = result.loc[0, "prediction_mean"]
         std = result.loc[0, "prediction_std"]
+        # A one-member ensemble has no spread to report (pandas std of a single value is NaN),
+        # which would otherwise render as a bare "nan" next to a perfectly good prediction.
+        spread = f" ± {std:.2f}" if pd.notna(std) else ""
         st.metric(
             f"Predicted {spec.target_column}",
-            f"{mean:.2f} ± {std:.2f}",
+            f"{mean:.2f}{spread}" if pd.notna(mean) else "n/a",
         )
         if result.loc[0, "Changes"] != "No changes":
             st.caption(f"SMILES standardization: {result.loc[0, 'Changes']}")

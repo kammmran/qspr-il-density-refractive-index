@@ -67,6 +67,7 @@ from rdkit.Chem import Descriptors, MolFromSmiles, rdMolDescriptors
 
 from qspr_il.data.ionics import client as ionics_client
 from qspr_il.models.engine import (
+    component_formal_charge,
     emit_progress as _emit,
     reorder_charged_species,
     standardize_molecule,
@@ -153,6 +154,15 @@ _PROPERTY_SYNONYMS = {
 }
 
 
+def _property_names(idsets_json: dict) -> set[str]:
+    """Every property display name in an ``ilsearch`` payload, skipping malformed rows."""
+    return {
+        row[2]
+        for row in idsets_json.get("res", [])
+        if isinstance(row, (list, tuple)) and len(row) > 2 and row[2]
+    }
+
+
 def resolve_property_display_name(idsets_json: dict, requested: str) -> str | None:
     """Match a user-supplied property name/short-name against a live search result's
     actual property display names (e.g. resolve ``"refractive-index"`` or ``"refractive"``
@@ -162,8 +172,10 @@ def resolve_property_display_name(idsets_json: dict, requested: str) -> str | No
     ``property_idsets.csv`` names (e.g. ``"refractive-index"``) don't exactly match ILThermo's
     live display strings (e.g. ``"Refractive index"``). Returns ``None`` if nothing matches.
     """
-    candidates = sorted({row[2]
-                        for row in idsets_json.get("res", []) if row[2]})
+    # Rows shorter than 3 fields carry no property name at all -- ILThermo returns such rows
+    # (and error payloads) in practice, and indexing them blindly turned "nothing matched"
+    # into an opaque IndexError partway through a fetch.
+    candidates = sorted(_property_names(idsets_json))
     requested_norm = requested.strip().lower().replace("-", " ")
     requested_norm = _PROPERTY_SYNONYMS.get(requested_norm, requested_norm)
     for candidate in candidates:
@@ -207,9 +219,12 @@ def compute_molecular_fields(smiles: str) -> dict:
     reorder_charged_species(df, smiles_col="Standardized_IL_SMILES")
     standardized = df.loc[0, "Standardized_IL_SMILES"]
 
+    # Classify by the parsed formal charge (see engine.component_formal_charge) rather than
+    # searching the text for "+"/"-": an explicit single bond ("C-C") is not an anion, and a
+    # neutral co-component belongs in neither list.
     parts = standardized.split(".")
-    cations = [p for p in parts if re.search(r"\+[0-9]*", p)]
-    anions = [p for p in parts if re.search(r"\-[0-9]*", p)]
+    cations = [p for p in parts if component_formal_charge(p) > 0]
+    anions = [p for p in parts if component_formal_charge(p) < 0]
 
     mol = MolFromSmiles(standardized)
     mw = Descriptors.MolWt(mol) if mol is not None else np.nan
@@ -582,7 +597,10 @@ def build_curated_dataset(
                 f"Step 5/5 · Standardizing structures: row {raw_i}/{n_raw} "
                 f"({len(rows)} kept, {skipped} dropped so far, "
                 f"{len(smiles_cache)} unique compounds resolved).",
-                raw_i / n_raw,
+                # Capped below 0.85: the filtering/deduplication stages that follow report
+                # 0.85 -> 1.0, and a bar that reaches 100% and then jumps backwards reads as
+                # a stall rather than progress.
+                0.85 * raw_i / n_raw,
             )
         temp_col = next((c for c in temp_cols if pd.notna(row.get(c))), None)
         pressure_col = next(
@@ -669,6 +687,9 @@ def build_curated_dataset(
             solvent2_component = _resolve_solvent_component(
                 solvent2_component, smiles_cache, use_pubchem_fallback)
         else:
+            if len(components) != 2:
+                skipped += 1
+                continue  # not a binary system: which component is the IL is a guess
             solvent_component = next(
                 (c for c in components if str(c["name"]).strip(
                 ).lower() == solvent_name.lower()), None
@@ -979,14 +1000,13 @@ def fetch_curated_dataset(
         idsets_json = json.load(open(idsets_path))
     display_name = resolve_property_display_name(idsets_json, property_query)
     if display_name is None:
-        available = sorted({row[2]
-                           for row in idsets_json.get("res", []) if row[2]})
+        available = sorted(_property_names(idsets_json))
         raise ValueError(
             f"No property matching {property_query!r} found in the current search results. "
             f"Available properties for this search: {available}"
         )
-    matching = [row[0]
-                for row in idsets_json.get("res", []) if row[2] == display_name]
+    matching = [row[0] for row in idsets_json.get("res", [])
+                if len(row) > 2 and row[2] == display_name]
     total_matching = len(matching)
     if max_datasets is not None:
         matching = matching[:max_datasets]
@@ -1043,9 +1063,17 @@ def fetch_curated_dataset(
     ionics_client.addSmiles(
         folder_name=f"csv_{folder_name}", data_root=data_root_path)
 
+    # Read back only the sets *this* run matched. The working folder is named after the
+    # property/system alone, so files left behind by an earlier run with a different
+    # max_datasets or year/author/keyword filter are still sitting there -- globbing the
+    # whole directory silently folded those extra datasets into the curated output.
     smiles_dir = data_root_path / f"smiles_csv_{folder_name}"
-    frames = [pd.read_csv(f) for f in smiles_dir.glob(
-        "*.csv")] if smiles_dir.exists() else []
+    frames = []
+    if smiles_dir.exists():
+        for setid in matching:
+            set_csv = smiles_dir / f"idset_{setid}.csv"
+            if set_csv.exists():
+                frames.append(pd.read_csv(set_csv))
     if not frames:
         _report("No data files were produced by the download/convert step.", 1.0)
         if all_systems or is_ternary:

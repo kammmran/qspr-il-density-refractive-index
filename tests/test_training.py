@@ -173,3 +173,111 @@ def test_default_hyperparameters_used_when_none_given(tmp_path):
 
     meta = json.load(open(tmp_path / "metadata_1.json"))
     assert meta["hyperparameters"] == DEFAULT_HYPERPARAMETERS
+
+
+def test_training_uses_the_same_standardized_structures_as_prediction(tmp_path):
+    # Regression (train/serve skew): training used to compute descriptors from the raw SMILES
+    # column while run_prediction standardizes first, so the two pipelines described the same
+    # compound with different feature vectors. Feeding in a deliberately non-canonical
+    # spelling must produce the same features the prediction path would build.
+    import numpy as np
+
+    from qspr_il.models.engine import process_il_smiles_list
+    from qspr_il.models.training import all_2d_descriptor_names
+
+    raw = "F[B-](F)(F)F.CCCCN1C=C[N+](C)=C1"  # anion first, Kekulized ring
+    df = _pure_dataset()
+    df["IL_SMILES"] = [raw] * len(df)
+    # Two unique groups are needed for a k-fold split; keep one row distinct.
+    df.loc[df.index[-3:], "IL_SMILES"] = _SMILES_POOL[2]
+
+    captured = {}
+    import qspr_il.models.training as training_module
+
+    real_process = training_module.process_il_smiles_list
+
+    def capturing(smiles_list, names):
+        captured["smiles"] = list(smiles_list)
+        return real_process(smiles_list, names)
+
+    training_module.process_il_smiles_list = capturing
+    try:
+        train_ensemble(
+            df,
+            property_value_col="Property_value",
+            smiles_col="IL_SMILES",
+            temp_col="Temperature (K)",
+            mole_fraction_col=None,
+            output_dir=tmp_path / "ensemble",
+            n_models=2,
+            hyperparameters=_FAST_HYPERPARAMETERS,
+        )
+    finally:
+        training_module.process_il_smiles_list = real_process
+
+    prepared = prepare_input(pd.DataFrame({"IL_SMILES": [raw]}),
+                             smiles_col="IL_SMILES", temp_col=None, mole_fraction_col=None)
+    assert captured["smiles"][0] == prepared.loc[0, "Standardized_IL_SMILES"]
+
+    names = all_2d_descriptor_names()
+    trained_features = process_il_smiles_list([captured["smiles"][0]], names)
+    served_features = process_il_smiles_list(
+        [prepared.loc[0, "Standardized_IL_SMILES"]], names)
+    assert np.allclose(trained_features, served_features, equal_nan=True)
+
+
+def test_trained_metadata_matches_the_shipped_ensemble_feature_list(tmp_path):
+    # The shipped ensembles list every feature column -- descriptors then "Temperature" (and
+    # "Mole_fraction" for mixtures) -- so a locally trained model should be described the
+    # same way, and should say outright whether it uses the mixture-composition feature.
+    import json
+
+    for mole_fraction_col, expected_tail in (("Mole_fraction_IL", ["Temperature", "Mole_fraction"]),
+                                             (None, ["Temperature"])):
+        output_dir = tmp_path / f"ens_{mole_fraction_col}"
+        train_ensemble(
+            _mixture_dataset() if mole_fraction_col else _pure_dataset(),
+            property_value_col="Property_value",
+            smiles_col="IL_SMILES",
+            temp_col="Temperature (K)",
+            mole_fraction_col=mole_fraction_col,
+            output_dir=output_dir,
+            n_models=2,
+            hyperparameters=_FAST_HYPERPARAMETERS,
+        )
+        metadata = json.loads((output_dir / "metadata_1.json").read_text())
+        assert metadata["descriptors"][-len(expected_tail):] == expected_tail
+        assert metadata["uses_mole_fraction"] is bool(mole_fraction_col)
+
+        # And the ensemble still round-trips through the prediction engine unchanged.
+        ensemble = load_models_and_metadata(output_dir)
+        prepared = prepare_input(
+            pd.DataFrame({"IL_SMILES": [_SMILES_POOL[0]], "Temperature (K)": [
+                         298.15], "Mole_fraction_IL": [0.5]}),
+            smiles_col="IL_SMILES",
+            temp_col="Temperature (K)",
+            mole_fraction_col=mole_fraction_col,
+        )
+        result = predict(prepared, ensemble,
+                         mole_fraction_col="Mole_fraction" if mole_fraction_col else None)
+        assert result["prediction_mean"].notna().all()
+
+
+def test_training_drops_rows_whose_numeric_columns_are_not_numeric(tmp_path):
+    # A stray unit string in a numeric column isn't NaN, so it survived dropna and then broke
+    # the float conversion of the whole feature block.
+    df = _pure_dataset()
+    df["Temperature (K)"] = df["Temperature (K)"].astype(object)
+    df.loc[df.index[0], "Temperature (K)"] = "n/a"
+    ensemble, metrics = train_ensemble(
+        df,
+        property_value_col="Property_value",
+        smiles_col="IL_SMILES",
+        temp_col="Temperature (K)",
+        mole_fraction_col=None,
+        output_dir=tmp_path / "ensemble",
+        n_models=2,
+        hyperparameters=_FAST_HYPERPARAMETERS,
+    )
+    assert len(ensemble.models) == 2
+    assert sum(m["n_val"] for m in metrics) == len(df) - 1

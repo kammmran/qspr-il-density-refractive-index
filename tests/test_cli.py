@@ -422,3 +422,62 @@ def test_action_both_can_decline_training_after_no_matching_model(monkeypatch, t
 
     rc = cli.main([])
     assert rc == 0
+
+
+def _forbid_input(monkeypatch):
+    def _no_input(*_args, **_kwargs):
+        raise AssertionError(
+            "the CLI prompted interactively when every needed option was given")
+
+    monkeypatch.setattr("builtins.input", _no_input)
+
+
+def test_model_dir_without_model_runs_the_custom_ensemble(tmp_path, monkeypatch, fake_ensemble_dir):
+    # Regression: the command _offer_auto_train prints after training a custom model
+    # ("--model_dir ... --input_csv ... --smiles_col ...", no --model) dropped into the
+    # interactive model menu instead of running, then died on EOF in a non-interactive shell.
+    _forbid_input(monkeypatch)
+    input_csv = _write_input_csv(
+        tmp_path, {"IL_SMILES": ["C[N+](C)(C)C.[Cl-]"], "Temperature (K)": [298.15]})
+    output_csv = tmp_path / "out.csv"
+
+    rc = cli.main(
+        [
+            "--model_dir", str(fake_ensemble_dir),
+            "--input_csv", str(input_csv),
+            "--smiles_col", "IL_SMILES",
+            "--temp_col", "Temperature (K)",
+            "--output_csv", str(output_csv),
+        ]
+    )
+    assert rc == 0
+    result = pd.read_csv(output_csv)
+    assert not result["prediction_mean"].isna().any()
+
+
+def test_model_dir_without_model_is_a_mixture_model_when_a_mole_fraction_column_is_given(
+    tmp_path, monkeypatch, fake_ensemble_dir
+):
+    _forbid_input(monkeypatch)
+    input_csv = _write_input_csv(
+        tmp_path,
+        {"IL_SMILES": ["C[N+](C)(C)C.[Cl-]"], "Temperature (K)": [
+            298.15], "Mole_fraction_IL": [0.4]},
+    )
+    output_csv = tmp_path / "out.csv"
+
+    rc = cli.main(
+        [
+            "--model_dir", str(fake_ensemble_dir),
+            "--input_csv", str(input_csv),
+            "--smiles_col", "IL_SMILES",
+            "--temp_col", "Temperature (K)",
+            "--mole_fraction_col", "Mole_fraction_IL",
+            "--output_csv", str(output_csv),
+        ]
+    )
+    assert rc == 0
+    result = pd.read_csv(output_csv)
+    # The mixture-composition feature was carried through under its canonical name.
+    assert "Mole_fraction" in result.columns
+    assert not result["prediction_mean"].isna().any()

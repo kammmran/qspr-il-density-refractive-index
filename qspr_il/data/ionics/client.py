@@ -124,7 +124,10 @@ def getIdsets(
     )
     if prop_id:
         url += f"&prp={prop_id}"
-    response = requests.get(url)
+    # Go through the same pooled, retrying session the downloads use, and with a timeout:
+    # a bare requests.get() has none, so an unresponsive ILThermo left the search hanging
+    # forever instead of failing.
+    response = _http_session().get(url, timeout=_REQUEST_TIMEOUT)
     response.raise_for_status()
     content = response.content
 
@@ -392,7 +395,7 @@ def convert2tsv(folder_name="", file_name="", data_root=None) -> None:
             writer.writerows(rows)
 
 
-def mergeFiles(folder_name: str, data_root=None) -> Path:
+def mergeFiles(folder_name: str, data_root=None) -> Path | None:
     """Concatenate every CSV in ``data_root/folder_name`` into one merged CSV."""
     data_root_path = get_data_dir(data_root)
     folder_path = data_root_path / folder_name
@@ -461,11 +464,15 @@ def addSmiles(folder_name="", file_name="", data_root=None, smiles_path=DEFAULT_
     smiles_dict = {}
     with open(smiles_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []  # None for an empty lookup file
         id_header = next(
-            (h for h in reader.fieldnames if "compound id" in h), None)
+            (h for h in fieldnames if "compound id" in h), None)
         smiles_header = next(
-            (h for h in reader.fieldnames if "smiles" in h.lower()), None)
+            (h for h in fieldnames if "smiles" in h.lower()), None)
         if not id_header or not smiles_header:
+            print(
+                f"{smiles_path} has no recognizable 'compound id' / 'smiles' columns; "
+                "component formulas were left as-is.")
             return
         for row in reader:
             smiles_dict[row[id_header]] = row[smiles_header]

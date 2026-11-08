@@ -28,6 +28,8 @@ from qspr_il.models.engine import (
     LoadedEnsemble,
     emit_progress,
     process_il_smiles_list,
+    reorder_charged_species,
+    standardize_molecule,
 )
 
 DEFAULT_HYPERPARAMETERS = {
@@ -98,20 +100,40 @@ def train_ensemble(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    required_cols = [property_value_col, smiles_col, temp_col] + \
+    numeric_cols = [property_value_col, temp_col] + \
         ([mole_fraction_col] if mole_fraction_col else [])
-    df = curated_df.dropna(subset=required_cols).reset_index(drop=True)
+    required_cols = [smiles_col] + numeric_cols
+    df = curated_df.copy()
+    # Coerce before dropping: a non-numeric cell (a unit string, "n/a") isn't NaN, so it
+    # survives dropna and then blows up the float conversion of the whole feature block.
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=required_cols).reset_index(drop=True)
     if len(df) < 4:
         raise ValueError(
             f"Not enough usable rows ({len(df)}) to train a model -- need at least 4.")
+
+    # Standardize exactly the way engine.prepare_input does before predicting. Training on
+    # the raw column while inference silently standardizes is train/serve skew: the two
+    # pipelines would compute descriptors for different structures (reionized, normalized,
+    # stereo-stripped, components reordered), and two spellings of the same IL would land in
+    # different k-fold groups, leaking the same compound across train and validation.
+    _report(
+        f"Step 1/3 · Standardizing {len(df)} training SMILES with RDKit (the same "
+        "standardization the prediction pipeline applies)...",
+        0.0,
+    )
+    standardized = pd.DataFrame(
+        {"Standardized_IL_SMILES": [standardize_molecule(s)[0] for s in df[smiles_col]]})
+    reorder_charged_species(standardized, smiles_col="Standardized_IL_SMILES")
+    smiles_list = standardized["Standardized_IL_SMILES"].tolist()
 
     all_names = all_2d_descriptor_names()
     _report(
         f"Step 1/3 · Computing the full set of {len(all_names)} 2D Mordred descriptors for "
         f"{len(df)} training rows. This is the slowest stage of training.",
-        0.0,
+        0.1,
     )
-    smiles_list = df[smiles_col].tolist()
     descriptor_matrix = process_il_smiles_list(smiles_list, all_names)
     usable_descriptors = select_usable_descriptors(
         descriptor_matrix, all_names)
@@ -131,7 +153,7 @@ def train_ensemble(
         feature_blocks.append(df[[mole_fraction_col]].to_numpy(dtype=float))
     X = np.hstack(feature_blocks)
     y = df[property_value_col].to_numpy(dtype=float)
-    groups = df[smiles_col].astype(str).to_numpy()
+    groups = np.asarray(smiles_list, dtype=object)
 
     n_unique_groups = len(set(groups))
     n_splits = min(n_models, n_unique_groups) if n_unique_groups >= 2 else 1
@@ -165,8 +187,16 @@ def train_ensemble(
             0.55 + 0.4 * i / len(splits),
         )
 
-        metadata = {"hyperparameters": hyperparameters,
-                    "descriptors": usable_descriptors}
+        # The shipped ensembles' metadata lists every feature column in order -- the
+        # descriptors followed by "Temperature" (and "Mole_fraction" for mixture models) --
+        # so a model trained here is described the same way. "uses_mole_fraction" records
+        # explicitly whether the mixture-composition feature is part of this model, which is
+        # otherwise only knowable from the ModelSpec a caller happens to pair it with.
+        metadata = {
+            "hyperparameters": hyperparameters,
+            "descriptors": usable_descriptors + ["Temperature"] + (["Mole_fraction"] if mole_fraction_col else []),
+            "uses_mole_fraction": bool(mole_fraction_col),
+        }
         joblib.dump(model, output_dir / f"model_{i}.joblib")
         with open(output_dir / f"metadata_{i}.json", "w") as f:
             json.dump(metadata, f)

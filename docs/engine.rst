@@ -78,7 +78,7 @@ SMILES before descriptor calculation:
        Reion --> Norm["rdMolStandardize.Normalizer()"]
        Norm --> Stereo["Remove stereochemistry"]
        Stereo --> Rejoin["Rejoin components"]
-       Rejoin --> Reorder["reorder_charged_species() - cations before anions"]
+       Rejoin --> Reorder["reorder_charged_species() - cations, then anions, then neutrals"]
        Reorder --> Out["Standardized_IL_SMILES + Changes summary"]
 
 ``load_models_and_metadata()`` reads one ensemble directory into a

@@ -62,9 +62,8 @@ def resolve_args(args: argparse.Namespace, spec: ModelSpec) -> argparse.Namespac
             "Temperature column (leave empty for 298.15 K)", args.temp_col or "")
         args.model_dir = _prompt(
             "Model directory", args.model_dir or str(spec.model_dir))
-        default_output = f"results/{Path(spec.model_dir).parent.name}_prediction.csv"
         args.output_csv = _prompt(
-            "Output CSV path", args.output_csv or default_output)
+            "Output CSV path", args.output_csv or _default_output_csv(spec))
         print()
     else:
         if not args.smiles_col:
@@ -74,7 +73,7 @@ def resolve_args(args: argparse.Namespace, spec: ModelSpec) -> argparse.Namespac
         if not args.model_dir:
             args.model_dir = str(spec.model_dir)
         if not args.output_csv:
-            args.output_csv = f"results/{Path(spec.model_dir).parent.name}_prediction.csv"
+            args.output_csv = _default_output_csv(spec)
 
     if spec.is_pure:
         args.mole_fraction_col = None
@@ -82,10 +81,52 @@ def resolve_args(args: argparse.Namespace, spec: ModelSpec) -> argparse.Namespac
     return args
 
 
+def _default_output_csv(spec: ModelSpec) -> str:
+    """Where predictions go when ``--output_csv`` wasn't given.
+
+    The registry's 8 ensembles live in ``models/<name>/<name>_ensemble_model``, so the parent
+    directory is the model name ("ri_ethanol"). A custom ``--model_dir`` has no such layout --
+    its parent is wherever the user put it ("custom_models", "tmp") -- so name the file after
+    the ensemble directory itself instead.
+    """
+    model_dir = Path(spec.model_dir)
+    stem = model_dir.name if spec.key == "custom" else model_dir.parent.name
+    return f"results/{stem}_prediction.csv"
+
+
+def _custom_spec(args: argparse.Namespace) -> ModelSpec:
+    """A :class:`ModelSpec` for an ensemble directory that isn't one of the registry's 8.
+
+    ``--model_dir`` pointing at a custom-trained ensemble (the command
+    :func:`_offer_auto_train` prints after training one) has no registry entry to look up, so
+    describe it from the arguments instead: it's a pure-IL model exactly when no mole-fraction
+    column was named. Without this, such a run fell through to the interactive model menu and
+    then applied one of the 8 built-in specs to the custom directory.
+    """
+    is_pure = not args.mole_fraction_col
+    return ModelSpec(
+        key="custom",
+        property_name="Custom model",
+        property_short="",
+        solvent="pure ionic liquid" if is_pure else "mixture",
+        is_pure=is_pure,
+        model_dir=Path(args.model_dir),
+        target_column="prediction",
+        description=f"Custom ensemble loaded from {args.model_dir}.",
+        default_smiles_col=args.smiles_col or "SMILES",
+        default_mole_fraction_col=args.mole_fraction_col,
+    )
+
+
 def _run_prediction_action(args: argparse.Namespace, spec: ModelSpec | None = None) -> int:
     """Run the existing prediction workflow: pick a model, load an input CSV, predict."""
-    spec = spec or (get_spec(args.model)
-                    if args.model else _interactive_choose_model())
+    if spec is None:
+        if args.model:
+            spec = get_spec(args.model)
+        elif args.model_dir:
+            spec = _custom_spec(args)
+        else:
+            spec = _interactive_choose_model()
     args = resolve_args(args, spec)
 
     input_path = Path(args.input_csv)
@@ -392,7 +433,8 @@ def _offer_auto_train(
             f"  Model {m['model']}: RMSE={m['rmse']:.4g}, R2={m['r2']:.3f} (train={m['n_train']}, val={m['n_val']})")
     print(
         f"\nModel saved to {output_dir}. Reuse it later with:\n"
-        f"  qspr-il-predict --model_dir {output_dir} --input_csv <your.csv> --smiles_col <col>"
+        f"  qspr-il-predict --model_dir {output_dir} --input_csv <your.csv> "
+        f"--smiles_col <col> --temp_col <col>"
         f"{' --mole_fraction_col <col>' if mole_fraction_col else ''} --output_csv <out.csv>"
     )
 
@@ -450,7 +492,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--action",
         choices=["model", "data", "both"],
         help="What to do: run a prediction model, fetch & clean ILThermo data, or both. "
-        "Defaults to 'model' if --model is given, otherwise you are prompted interactively.",
+        "Defaults to 'model' if any prediction option (--model, --model_dir, --input_csv, "
+        "--smiles_col, --mole_fraction_col) is given, otherwise you are prompted interactively.",
     )
     parser.add_argument(
         "--model", choices=sorted(r.key for r in iter_specs()), help="Model to run (1-8).")
@@ -462,7 +505,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Name of the mole fraction column (mixture models only).")
     parser.add_argument("--temp_col", help="Name of the temperature column.")
     parser.add_argument(
-        "--model_dir", help="Directory containing the ensemble of models and metadata.")
+        "--model_dir",
+        help="Directory containing the ensemble of models and metadata. Use it on its own "
+        "(without --model) to run a custom-trained ensemble; it is then treated as a pure-IL "
+        "model unless --mole_fraction_col is also given.",
+    )
     parser.add_argument(
         "--output_csv", help="Path to save the output CSV with predictions.")
     return parser
@@ -470,8 +517,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # Any prediction-specific flag means the user has already chosen to run a model -- asking
+    # them again (and then reading EOF from a non-interactive shell) helps nobody.
+    given_prediction_args = any(
+        [args.model, args.model_dir, args.input_csv, args.smiles_col, args.mole_fraction_col])
     action = args.action or (
-        "model" if args.model else None) or _prompt_action()
+        "model" if given_prediction_args else None) or _prompt_action()
 
     if action == "data":
         return 0 if _run_data_action() is not None else 1

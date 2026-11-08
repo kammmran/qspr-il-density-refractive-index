@@ -737,3 +737,55 @@ def test_fetch_curated_dataset_all_systems_merges_three_separate_searches(tmp_pa
     cleaning.fetch_curated_dataset(
         "activity", None, all_systems=True, data_root=tmp_path)
     assert calls == ["1", "2", "3"]
+
+
+def test_resolve_property_display_name_tolerates_malformed_search_rows():
+    # ILThermo's live payloads (and its error responses) contain rows shorter than 3 fields;
+    # indexing them blindly turned "nothing matched" into an opaque IndexError partway
+    # through a fetch.
+    idsets_json = {"res": [["id1", "some set"], [
+        "id2", "auth", "Density", "Liquid"], "garbage"]}
+    assert cleaning.resolve_property_display_name(
+        idsets_json, "density") == "Density"
+    assert cleaning.resolve_property_display_name(
+        {"res": [["id1", "some set"]]}, "density") is None
+
+
+def test_fetch_curated_dataset_ignores_csvs_left_by_an_earlier_run(tmp_path, monkeypatch):
+    # Regression: the working folder is named after the property/system alone, so files from a
+    # previous run with a different max_datasets / year / author / keyword filter were still
+    # sitting in it. Globbing the whole directory silently folded those extra datasets into
+    # the curated output.
+    def fake_getIdsets(**kwargs):
+        path = tmp_path / "idsets.json"
+        path.write_text(
+            '{"res": [["wanted", "auth", "Density", "Liquid"], ["stale", "auth", "Density", "Liquid"]]}')
+        return path
+
+    monkeypatch.setattr(cleaning.ionics_client, "getIdsets", fake_getIdsets)
+    monkeypatch.setattr(cleaning.ionics_client,
+                        "download_idsets", lambda *a, **k: None)
+    monkeypatch.setattr(cleaning.ionics_client,
+                        "convert2csv", lambda *a, **k: None)
+    monkeypatch.setattr(cleaning.ionics_client,
+                        "addSmiles", lambda *a, **k: None)
+
+    smiles_dir = tmp_path / "smiles_csv_density_pure_data"
+    smiles_dir.mkdir(parents=True)
+    pd.DataFrame([_pure_raw_row(idset="wanted")]).to_csv(
+        smiles_dir / "idset_wanted.csv", index=False)
+    pd.DataFrame([_pure_raw_row(idset="stale", **{"Temperature, K": 310.0})]).to_csv(
+        smiles_dir / "idset_stale.csv", index=False)
+
+    curated = cleaning.fetch_curated_dataset(
+        "density", None, data_root=tmp_path, max_datasets=1)
+    assert curated["setid"].tolist() == ["wanted"]
+
+
+def test_compute_molecular_fields_ignores_neutral_components_when_splitting_ions():
+    fields = cleaning.compute_molecular_fields(f"{IL_SMILES}.{WATER_SMILES}")
+    assert fields["IL_component_number"] == 3
+    assert "." not in fields["IL_cation_SMILES"]
+    assert "." not in fields["IL_anion_SMILES"]
+    # The neutral component stays in the standardized structure but belongs to neither ion.
+    assert WATER_SMILES in fields["Standardized_IL_SMILES"].split(".")
